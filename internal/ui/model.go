@@ -15,7 +15,7 @@ import (
 type Mode int
 
 const (
-	ModeNormal  Mode = iota
+	ModeNormal Mode = iota
 	ModeInsert
 	ModeCommand
 )
@@ -46,10 +46,10 @@ type Model struct {
 	textInput textinput.Model
 	textArea  textarea.Model
 
-	cmdBuffer  string // characters typed after ':'
-	statusMsg  string // transient status line message
-	statusErr  bool   // true = red, false = green
-	modified   bool
+	cmdBuffer string // characters typed after ':'
+	statusMsg string // transient status line message
+	statusErr bool   // true = red, false = green
+	modified  bool
 
 	width  int
 	height int
@@ -336,7 +336,7 @@ func (m Model) execCommand(cmd string) (tea.Model, tea.Cmd) {
 	default:
 		// :1-9 to jump to section by number
 		if len(cmd) == 1 && cmd[0] >= '1' && cmd[0] <= '9' {
-			idx := int(cmd[0]-'1')
+			idx := int(cmd[0] - '1')
 			if idx < len(m.sections) {
 				m.activeSection = idx
 				m.activeField = 0
@@ -428,13 +428,6 @@ func (m Model) BuildManifest() *manifest.Manifest {
 			ClientState:   get("frontend", "client_state"),
 			Styling:       get("frontend", "styling"),
 			BrowserMatrix: get("frontend", "browser_matrix"),
-		},
-		Desktop: manifest.DesktopPillar{
-			TargetOS:     get("desktop", "target_os"),
-			AppFramework: manifest.DesktopFramework(get("desktop", "app_framework")),
-			HWAccess:     get("desktop", "hw_access"),
-			IPCModel:     get("desktop", "ipc_model"),
-			Distribution: get("desktop", "distribution"),
 		},
 
 		// Phase 3 – Lifecycle Operations & Tooling
@@ -530,17 +523,17 @@ func (m Model) renderTextAreaFull(w, h int, f Field) string {
 	label := StyleTextAreaLabel.Render(fmt.Sprintf("  ── %s ─── (Esc to exit INSERT) ", f.Key))
 	b.WriteString(label + "\n")
 	b.WriteString(StyleTextAreaBorder.
-		Width(w-2).
-		Height(h-2).
+		Width(w - 2).
+		Height(h - 2).
 		Render(m.textArea.View()))
 	b.WriteString("\n")
 	return b.String()
 }
 
 func (m Model) renderFieldList(w, h int, sec Section) string {
-	const lineNumW = 4   // e.g. " 1  "
-	const labelW = 14    // matches the padded Label strings
-	const eqW = 3        // " = "
+	const lineNumW = 4 // e.g. " 1  "
+	const labelW = 14  // matches the padded Label strings
+	const eqW = 3      // " = "
 
 	valW := w - lineNumW - labelW - eqW - 1
 	if valW < 10 {

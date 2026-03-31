@@ -73,15 +73,6 @@ const (
 	RenderISR RenderingMode = "ISR"
 )
 
-type DesktopFramework string
-
-const (
-	DeskElectron DesktopFramework = "Electron"
-	DeskTauri    DesktopFramework = "Tauri"
-	DeskQt       DesktopFramework = "Qt"
-	DeskNative   DesktopFramework = "native (Swift/WPF)"
-	DeskOther    DesktopFramework = "other"
-)
 
 type E2EFramework string
 
@@ -174,14 +165,6 @@ type FrontendPillar struct {
 	BrowserMatrix string        `json:"browser_matrix"` // e.g. "Chromium>100, Safari>15"
 }
 
-// DesktopPillar covers OS targets, frameworks, hardware access, IPC, and distribution.
-type DesktopPillar struct {
-	TargetOS      string           `json:"target_os"`      // e.g. "Windows 10/11, macOS Silicon"
-	AppFramework  DesktopFramework `json:"app_framework"`
-	HWAccess      string           `json:"hw_access"`      // GPU, USB, filesystem
-	IPCModel      string           `json:"ipc_model"`      // main/renderer IPC security
-	Distribution  string           `json:"distribution"`   // .exe, .dmg, .AppImage, OTA strategy
-}
 
 // ── Phase 3: Lifecycle Operations & Tooling ───────────────────────────────────
 
@@ -225,7 +208,6 @@ type Manifest struct {
 	// Phase 2 – Domain-Specific Execution Paths
 	Backend  BackendPillar  `json:"backend"`
 	Frontend FrontendPillar `json:"frontend"`
-	Desktop  DesktopPillar  `json:"desktop"`
 
 	// Phase 3 – Lifecycle Operations & Tooling
 	Testing   TestingPillar   `json:"testing"`

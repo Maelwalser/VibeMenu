@@ -278,42 +278,6 @@ func initSections() []Section {
 			},
 		},
 
-		{
-			ID:    "desktop",
-			Abbr:  "DESK",
-			Title: "Phase 2 · Path C: Desktop Application",
-			Desc:  "Target OS, app framework, hardware access, IPC, and distribution.",
-			Fields: []Field{
-				{
-					Key:   "target_os",
-					Label: "target_os     ",
-					Kind:  KindText,
-				},
-				{
-					Key:     "app_framework",
-					Label:   "app_framework ",
-					Kind:    KindSelect,
-					Options: []string{"N/A", "Electron", "Tauri", "Qt", "native (Swift/WPF)", "other"},
-				},
-				{
-					Key:   "hw_access",
-					Label: "hw_access     ",
-					Kind:  KindTextArea,
-				},
-				{
-					Key:   "ipc_model",
-					Label: "ipc_model     ",
-					Kind:  KindText,
-				},
-				{
-					Key:     "distribution",
-					Label:   "distribution  ",
-					Kind:    KindSelect,
-					Options: []string{"N/A", ".exe (Squirrel)", ".dmg", ".AppImage", "all platforms", "other"},
-				},
-			},
-		},
-
 		// ── Phase 3 · Lifecycle Operations & Tooling ──────────────────────────
 
 		{

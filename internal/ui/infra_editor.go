@@ -152,6 +152,10 @@ type InfraEditor struct {
 	internalMode infraMode
 	formInput    textinput.Model
 	width        int
+
+	// Vim motion state
+	countBuf string
+	gBuf     bool
 }
 
 func newInfraEditor() InfraEditor {
@@ -205,7 +209,7 @@ func (ie InfraEditor) HintLine() string {
 		return StyleInsertMode.Render(" -- INSERT -- ") +
 			StyleHelpDesc.Render("  Esc: normal  Tab: next field")
 	}
-	return hintBar("j/k", "navigate", "Space/Enter", "cycle", "H", "cycle back", "i", "edit text", "h/l", "sub-tab")
+	return hintBar("j/k", "navigate", "gg/G", "top/bottom", "[n]j/k", "jump n lines", "Space/Enter", "cycle", "H", "cycle back", "i", "edit text", "h/l", "sub-tab")
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -259,16 +263,56 @@ func (ie InfraEditor) updateFields(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
 	}
 	n := len(fields)
 	wantsInsert := false
-	switch key.String() {
+
+	k := key.String()
+
+	// Vim count prefix
+	if len(k) == 1 && k[0] >= '1' && k[0] <= '9' {
+		ie.countBuf += k
+		ie.gBuf = false
+		return ie, nil
+	}
+	if k == "0" && ie.countBuf != "" {
+		ie.countBuf += "0"
+		ie.gBuf = false
+		return ie, nil
+	}
+
+	switch k {
 	case "j", "down":
-		if idx < n-1 {
-			idx++
+		count := parseVimCount(ie.countBuf)
+		ie.countBuf = ""
+		ie.gBuf = false
+		for i := 0; i < count; i++ {
+			if idx < n-1 {
+				idx++
+			}
 		}
 	case "k", "up":
-		if idx > 0 {
-			idx--
+		count := parseVimCount(ie.countBuf)
+		ie.countBuf = ""
+		ie.gBuf = false
+		for i := 0; i < count; i++ {
+			if idx > 0 {
+				idx--
+			}
 		}
+	case "g":
+		if ie.gBuf {
+			// gg — go to top
+			idx = 0
+			ie.gBuf = false
+		} else {
+			ie.gBuf = true
+		}
+		ie.countBuf = ""
+	case "G":
+		idx = n - 1
+		ie.countBuf = ""
+		ie.gBuf = false
 	case "enter", " ":
+		ie.countBuf = ""
+		ie.gBuf = false
 		if idx < n {
 			f := &fields[idx]
 			if f.Kind == KindSelect {
@@ -278,6 +322,8 @@ func (ie InfraEditor) updateFields(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
 			}
 		}
 	case "H", "shift+left":
+		ie.countBuf = ""
+		ie.gBuf = false
 		if idx < n {
 			f := &fields[idx]
 			if f.Kind == KindSelect {
@@ -285,7 +331,12 @@ func (ie InfraEditor) updateFields(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
 			}
 		}
 	case "i":
+		ie.countBuf = ""
+		ie.gBuf = false
 		wantsInsert = true
+	default:
+		ie.countBuf = ""
+		ie.gBuf = false
 	}
 	// Write back updated fields and index
 	switch ie.activeTab {

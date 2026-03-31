@@ -416,6 +416,28 @@ func setFieldValue(fields []Field, key, val string) []Field {
 	return fields
 }
 
+// parseVimCount converts a digit buffer (e.g. "3", "12") to an integer count.
+// Returns 1 when the buffer is empty. Caps at 999 for sanity.
+func parseVimCount(buf string) int {
+	if buf == "" {
+		return 1
+	}
+	n := 0
+	for _, c := range buf {
+		if c < '0' || c > '9' {
+			return 1
+		}
+		n = n*10 + int(c-'0')
+	}
+	if n <= 0 {
+		return 1
+	}
+	if n > 999 {
+		return 999
+	}
+	return n
+}
+
 // newFormInput creates a standard textinput for use in form editors.
 func newFormInput() textinput.Model {
 	fi := textinput.New()

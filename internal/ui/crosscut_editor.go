@@ -105,6 +105,10 @@ type CrossCutEditor struct {
 	internalMode ccMode
 	formInput    textinput.Model
 	width        int
+
+	// Vim motion state
+	countBuf string
+	gBuf     bool
 }
 
 func newCrossCutEditor() CrossCutEditor {
@@ -149,7 +153,7 @@ func (cc CrossCutEditor) HintLine() string {
 		return StyleInsertMode.Render(" -- INSERT -- ") +
 			StyleHelpDesc.Render("  Esc: normal  Tab: next field")
 	}
-	return hintBar("j/k", "navigate", "Space/Enter", "cycle", "H", "cycle back", "i", "edit text", "h/l", "sub-tab")
+	return hintBar("j/k", "navigate", "gg/G", "top/bottom", "[n]j/k", "jump n lines", "Space/Enter", "cycle", "H", "cycle back", "i", "edit text", "h/l", "sub-tab")
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -199,16 +203,56 @@ func (cc CrossCutEditor) updateFields(key tea.KeyMsg) (CrossCutEditor, tea.Cmd) 
 	}
 	n := len(fields)
 	wantsInsert := false
-	switch key.String() {
+
+	k := key.String()
+
+	// Vim count prefix
+	if len(k) == 1 && k[0] >= '1' && k[0] <= '9' {
+		cc.countBuf += k
+		cc.gBuf = false
+		return cc, nil
+	}
+	if k == "0" && cc.countBuf != "" {
+		cc.countBuf += "0"
+		cc.gBuf = false
+		return cc, nil
+	}
+
+	switch k {
 	case "j", "down":
-		if idx < n-1 {
-			idx++
+		count := parseVimCount(cc.countBuf)
+		cc.countBuf = ""
+		cc.gBuf = false
+		for i := 0; i < count; i++ {
+			if idx < n-1 {
+				idx++
+			}
 		}
 	case "k", "up":
-		if idx > 0 {
-			idx--
+		count := parseVimCount(cc.countBuf)
+		cc.countBuf = ""
+		cc.gBuf = false
+		for i := 0; i < count; i++ {
+			if idx > 0 {
+				idx--
+			}
 		}
+	case "g":
+		if cc.gBuf {
+			// gg — go to top
+			idx = 0
+			cc.gBuf = false
+		} else {
+			cc.gBuf = true
+		}
+		cc.countBuf = ""
+	case "G":
+		idx = n - 1
+		cc.countBuf = ""
+		cc.gBuf = false
 	case "enter", " ":
+		cc.countBuf = ""
+		cc.gBuf = false
 		if idx < n {
 			f := &fields[idx]
 			if f.Kind == KindSelect {
@@ -218,6 +262,8 @@ func (cc CrossCutEditor) updateFields(key tea.KeyMsg) (CrossCutEditor, tea.Cmd) 
 			}
 		}
 	case "H", "shift+left":
+		cc.countBuf = ""
+		cc.gBuf = false
 		if idx < n {
 			f := &fields[idx]
 			if f.Kind == KindSelect {
@@ -225,7 +271,12 @@ func (cc CrossCutEditor) updateFields(key tea.KeyMsg) (CrossCutEditor, tea.Cmd) 
 			}
 		}
 	case "i":
+		cc.countBuf = ""
+		cc.gBuf = false
 		wantsInsert = true
+	default:
+		cc.countBuf = ""
+		cc.gBuf = false
 	}
 	// Write back updated fields and index
 	switch cc.activeTab {

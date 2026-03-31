@@ -296,6 +296,8 @@ type AuthConfig struct {
 	AuthzModel   string `json:"authz_model"`
 	TokenStorage string `json:"token_storage"`
 	MFA          string `json:"mfa"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	Roles        string `json:"roles,omitempty"`
 }
 
 // EnvConfig describes the deployment environment configuration.

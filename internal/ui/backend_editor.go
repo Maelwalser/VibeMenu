@@ -365,11 +365,23 @@ func defaultAuthFields() []Field {
 			Value:   "RBAC",
 		},
 		{
+			Key: "roles", Label: "roles         ", Kind: KindMultiSelect,
+			Options: []string{
+				"admin", "superadmin", "user", "moderator",
+				"editor", "viewer", "manager", "auditor", "owner",
+			},
+		},
+		{
 			Key: "token_storage", Label: "token_storage ", Kind: KindMultiSelect,
 			Options: []string{
 				"HttpOnly cookie", "Authorization header (Bearer)",
 				"WebSocket protocol header", "Other",
 			},
+		},
+		{
+			Key: "refresh_token", Label: "refresh_token ", Kind: KindSelect,
+			Options: []string{"None", "Rotating", "Non-rotating", "Sliding window"},
+			Value:   "None",
 		},
 		{
 			Key: "mfa", Label: "mfa           ", Kind: KindSelect,
@@ -438,6 +450,13 @@ type BackendEditor struct {
 	Services  []manifest.ServiceDef
 	CommLinks []manifest.CommLink
 	Events    []manifest.EventDef
+
+	// Cross-tab references (injected from model.go)
+	DomainNames []string
+
+	// Vim motion state
+	countBuf string
+	gBuf     bool
 }
 
 func newBackendEditor() BackendEditor {
@@ -451,6 +470,79 @@ func newBackendEditor() BackendEditor {
 		eventEditor:     newBeListEditor(),
 		formInput:       newFormInput(),
 	}
+}
+
+// SetDomainNames injects domain names from the data tab for event domain dropdowns.
+func (be *BackendEditor) SetDomainNames(names []string) {
+	be.DomainNames = names
+}
+
+// withServiceNames returns a copy of fields where from/to are upgraded to
+// KindSelect dropdowns populated with the current service names.
+func (be BackendEditor) withServiceNames(fields []Field) []Field {
+	names := be.ServiceNames()
+	if len(names) == 0 {
+		return fields
+	}
+	out := copyFields(fields)
+	for i := range out {
+		if out[i].Key != "from" && out[i].Key != "to" {
+			continue
+		}
+		out[i].Kind = KindSelect
+		out[i].Options = names
+		// Try to preserve the existing value by finding it in the options.
+		// If not found, keep Value as-is but point SelIdx to first option.
+		found := false
+		for j, n := range names {
+			if n == out[i].Value {
+				out[i].SelIdx = j
+				found = true
+				break
+			}
+		}
+		if !found {
+			out[i].SelIdx = 0
+			if out[i].Value == "" {
+				out[i].Value = names[0]
+			}
+		}
+	}
+	return out
+}
+
+// withDomainNames returns a copy of fields where the domain field is upgraded to
+// a KindSelect dropdown populated with the available domain names.
+func (be BackendEditor) withDomainNames(fields []Field) []Field {
+	if len(be.DomainNames) == 0 {
+		return fields
+	}
+	out := copyFields(fields)
+	for i := range out {
+		if out[i].Key == "domain" {
+			out[i].Kind = KindSelect
+			out[i].Options = be.DomainNames
+			found := false
+			for _, n := range be.DomainNames {
+				if n == out[i].Value {
+					found = true
+					break
+				}
+			}
+			if !found {
+				out[i].Value = be.DomainNames[0]
+				out[i].SelIdx = 0
+			} else {
+				for j, n := range be.DomainNames {
+					if n == out[i].Value {
+						out[i].SelIdx = j
+						break
+					}
+				}
+			}
+		}
+	}
+	return out
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -500,7 +592,9 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 		Strategy:     fieldGetMulti(be.AuthFields, "strategy"),
 		Provider:     fieldGet(be.AuthFields, "provider"),
 		AuthzModel:   fieldGet(be.AuthFields, "authz_model"),
+		Roles:        fieldGetMulti(be.AuthFields, "roles"),
 		TokenStorage: fieldGetMulti(be.AuthFields, "token_storage"),
+		RefreshToken: fieldGet(be.AuthFields, "refresh_token"),
 		MFA:          fieldGet(be.AuthFields, "mfa"),
 	}
 
@@ -590,7 +684,7 @@ func (be BackendEditor) HintLine() string {
 		}
 		return hintBar("j/k", "navigate", "Space", "cycle", "a", "add event", "d", "del event", "h/l", "sub-tab")
 	default:
-		return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "H", "cycle back", "h/l", "sub-tab", "b", "change arch")
+		return hintBar("j/k", "navigate", "gg/G", "top/bottom", "[n]j/k", "jump", "i/Enter", "edit", "Space", "cycle", "H", "cycle back", "h/l", "sub-tab", "b", "change arch")
 	}
 }
 
@@ -867,39 +961,81 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 		return be.updateMessaging(key)
 	}
 
+	// Vim count prefix (digits 1-9, or 0 when count already started)
+	k := key.String()
+	if len(k) == 1 && k[0] >= '1' && k[0] <= '9' {
+		be.countBuf += k
+		be.gBuf = false
+		return be, nil
+	}
+	if k == "0" && be.countBuf != "" {
+		be.countBuf += "0"
+		be.gBuf = false
+		return be, nil
+	}
+
 	// Generic field navigation for ENV, API GW, AUTH
-	switch key.String() {
+	switch k {
 	case "b":
+		be.countBuf = ""
+		be.gBuf = false
 		be.ArchConfirmed = false
 		be.dropdownOpen = false
 		be.dropdownIdx = be.ArchIdx
 		be.activeTabIdx = 0
 		be.activeField = 0
 	case "h", "left":
+		be.countBuf = ""
+		be.gBuf = false
 		if be.activeTabIdx > 0 {
 			be.activeTabIdx--
 			be.activeField = 0
 		}
 	case "l", "right":
+		be.countBuf = ""
+		be.gBuf = false
 		if be.activeTabIdx < len(be.activeTabs())-1 {
 			be.activeTabIdx++
 			be.activeField = 0
 		}
 	case "j", "down":
-		if fields := be.currentEditableFields(); fields != nil && be.activeField < len(*fields)-1 {
-			be.activeField++
+		count := parseVimCount(be.countBuf)
+		be.countBuf = ""
+		be.gBuf = false
+		if fields := be.currentEditableFields(); fields != nil {
+			for i := 0; i < count; i++ {
+				if be.activeField < len(*fields)-1 {
+					be.activeField++
+				}
+			}
 		}
 	case "k", "up":
-		if be.activeField > 0 {
-			be.activeField--
+		count := parseVimCount(be.countBuf)
+		be.countBuf = ""
+		be.gBuf = false
+		for i := 0; i < count; i++ {
+			if be.activeField > 0 {
+				be.activeField--
+			}
 		}
 	case "g":
-		be.activeField = 0
+		if be.gBuf {
+			// gg — go to top
+			be.activeField = 0
+			be.gBuf = false
+		} else {
+			be.gBuf = true
+		}
+		be.countBuf = ""
 	case "G":
+		be.countBuf = ""
+		be.gBuf = false
 		if fields := be.currentEditableFields(); fields != nil {
 			be.activeField = len(*fields) - 1
 		}
 	case "enter", " ":
+		be.countBuf = ""
+		be.gBuf = false
 		if f := be.mutableFieldPtr(); f != nil && (f.Kind == KindSelect || f.Kind == KindMultiSelect) {
 			be.ddOpen = true
 			if f.Kind == KindSelect {
@@ -911,11 +1047,18 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 			return be.tryEnterInsert()
 		}
 	case "H", "shift+left":
+		be.countBuf = ""
+		be.gBuf = false
 		if f := be.mutableFieldPtr(); f != nil && f.Kind == KindSelect {
 			f.CyclePrev()
 		}
 	case "i":
+		be.countBuf = ""
+		be.gBuf = false
 		return be.tryEnterInsert()
+	default:
+		be.countBuf = ""
+		be.gBuf = false
 	}
 	return be, nil
 }
@@ -1098,7 +1241,7 @@ func (be BackendEditor) updateCommList(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		}
 	case "a":
 		be.CommLinks = append(be.CommLinks, manifest.CommLink{})
-		ed.items = append(ed.items, defaultCommFields())
+		ed.items = append(ed.items, be.withServiceNames(defaultCommFields()))
 		ed.itemIdx = len(ed.items) - 1
 		ed.form = copyFields(ed.items[ed.itemIdx])
 		ed.formIdx = 0
@@ -1114,7 +1257,7 @@ func (be BackendEditor) updateCommList(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		}
 	case "enter":
 		if n > 0 {
-			ed.form = copyFields(ed.items[ed.itemIdx])
+			ed.form = be.withServiceNames(copyFields(ed.items[ed.itemIdx]))
 			ed.formIdx = 0
 			ed.itemView = beListViewForm
 			be.activeField = 0
@@ -1234,7 +1377,7 @@ func (be BackendEditor) updateMessaging(key tea.KeyMsg) (BackendEditor, tea.Cmd)
 		} else {
 			eventIdx := be.activeField - brokerCount
 			if eventIdx < eventCount {
-				ed.form = copyFields(ed.items[eventIdx])
+				ed.form = be.withDomainNames(copyFields(ed.items[eventIdx]))
 				ed.formIdx = 0
 				ed.itemIdx = eventIdx
 				ed.itemView = beListViewForm
@@ -1249,7 +1392,7 @@ func (be BackendEditor) updateMessaging(key tea.KeyMsg) (BackendEditor, tea.Cmd)
 		}
 	case "a":
 		be.Events = append(be.Events, manifest.EventDef{})
-		ed.items = append(ed.items, defaultEventFields())
+		ed.items = append(ed.items, be.withDomainNames(defaultEventFields()))
 		ed.itemIdx = len(ed.items) - 1
 		ed.form = copyFields(ed.items[ed.itemIdx])
 		ed.formIdx = 0

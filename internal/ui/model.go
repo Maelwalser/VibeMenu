@@ -202,6 +202,8 @@ func (m Model) delegateUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case m.isBackendSection():
+		// Inject domain names for event domain dropdowns
+		m.backendEditor.SetDomainNames(m.dataTabEditor.domainNames())
 		m.backendEditor, cmd = m.backendEditor.Update(msg)
 		m.modified = true
 	case m.isDataSection():

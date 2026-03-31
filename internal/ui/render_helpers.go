@@ -93,6 +93,105 @@ func renderFormFields(w int, fields []Field, activeIdx int, insertMode bool, inp
 	return lines
 }
 
+// renderFormFieldsWithDropdown is like renderFormFields but renders an inline
+// dropdown list below the active KindSelect field when ddOpen is true.
+// ddOptIdx is the currently highlighted option index in the dropdown.
+func renderFormFieldsWithDropdown(w int, fields []Field, activeIdx int, insertMode bool, input textinput.Model, ddOpen bool, ddOptIdx int) []string {
+	if len(fields) == 0 {
+		return nil
+	}
+	const labelW = 14
+	const eqW = 3
+	const lineNumW = 4
+	const ddIndent = lineNumW + labelW + eqW // 21 spaces to align with value column
+	valW := w - lineNumW - labelW - eqW - 1
+	if valW < 10 {
+		valW = 10
+	}
+
+	lines := make([]string, 0, len(fields))
+	for i, f := range fields {
+		isCur := i == activeIdx
+
+		var lineNo string
+		if isCur {
+			lineNo = StyleCurLineNum.Render(fmt.Sprintf("%3d ", i+1))
+		} else {
+			lineNo = StyleLineNum.Render(fmt.Sprintf("%3d ", i+1))
+		}
+
+		var keyStr string
+		if isCur {
+			keyStr = StyleFieldKeyActive.Render(f.Label)
+		} else {
+			keyStr = StyleFieldKey.Render(f.Label)
+		}
+
+		eq := StyleEquals.Render(" = ")
+
+		var valStr string
+		switch {
+		case insertMode && isCur && f.Kind == KindText:
+			valStr = input.View()
+		case f.Kind == KindSelect:
+			val := f.DisplayValue()
+			if isCur {
+				val = StyleFieldValActive.Render(val)
+			} else {
+				val = StyleFieldVal.Render(val)
+			}
+			if isCur && ddOpen {
+				valStr = val + StyleSelectArrow.Render(" ▴")
+			} else {
+				valStr = val + StyleSelectArrow.Render(" ▾")
+			}
+		default:
+			dv := f.DisplayValue()
+			if len(dv) > valW {
+				dv = dv[:valW-1] + "…"
+			}
+			if dv == "" {
+				valStr = StyleSectionDesc.Render("_")
+			} else if isCur {
+				valStr = StyleFieldValActive.Render(dv)
+			} else {
+				valStr = StyleFieldVal.Render(dv)
+			}
+		}
+
+		row := lineNo + keyStr + eq + valStr
+		if isCur {
+			raw := lipgloss.Width(row)
+			if raw < w {
+				row += strings.Repeat(" ", w-raw)
+			}
+			row = StyleCurLine.Render(row)
+		}
+		lines = append(lines, row)
+
+		// Inject scrollable dropdown options below the active select field
+		if isCur && ddOpen && f.Kind == KindSelect {
+			indent := strings.Repeat(" ", ddIndent)
+			for j, opt := range f.Options {
+				isHL := j == ddOptIdx
+				var optRow string
+				if isHL {
+					optRow = indent + StyleFieldValActive.Render("▶ "+opt)
+					rw := lipgloss.Width(optRow)
+					if rw < w {
+						optRow += strings.Repeat(" ", w-rw)
+					}
+					optRow = StyleCurLine.Render(optRow)
+				} else {
+					optRow = indent + StyleFieldVal.Render("  "+opt)
+				}
+				lines = append(lines, optRow)
+			}
+		}
+	}
+	return lines
+}
+
 // renderFormFieldsWithDisabled is like renderFormFields but also renders
 // disabled (grayed-out) fields with a dash value and no highlighting.
 func renderFormFieldsWithDisabled(w int, fields []Field, activeIdx int, insertMode bool, input textinput.Model, isDisabled func([]Field, int) bool) []string {

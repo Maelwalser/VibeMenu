@@ -409,6 +409,10 @@ type BackendEditor struct {
 	formInput    textinput.Model
 	width        int
 
+	// Dropdown state (shared across all sub-contexts; only one can be open)
+	ddOpen   bool
+	ddOptIdx int
+
 	// Services and comm links for manifest export
 	Services  []manifest.ServiceDef
 	CommLinks []manifest.CommLink
@@ -534,6 +538,9 @@ func (be BackendEditor) HintLine() string {
 		}
 		return hintBar("Enter", "open arch selector")
 	}
+	if be.ddOpen {
+		return hintBar("j/k", "navigate", "Enter", "select", "Esc", "cancel")
+	}
 	if be.internalMode == beInsert {
 		return StyleInsertMode.Render(" -- INSERT -- ") +
 			StyleHelpDesc.Render("  Esc: normal  Tab: next field")
@@ -571,6 +578,13 @@ func (be BackendEditor) Update(msg tea.Msg) (BackendEditor, tea.Cmd) {
 	}
 	if be.internalMode == beInsert {
 		return be.updateInsert(msg)
+	}
+	if be.ddOpen {
+		key, ok := msg.(tea.KeyMsg)
+		if ok {
+			return be.updateDropdown(key)
+		}
+		return be, nil
 	}
 	return be.updateNormal(msg)
 }
@@ -611,6 +625,103 @@ func (be BackendEditor) updateArchSelect(msg tea.Msg) (BackendEditor, tea.Cmd) {
 		be.dropdownIdx = be.ArchIdx
 	}
 	return be, nil
+}
+
+// updateDropdown handles navigation while a dropdown menu is open.
+func (be BackendEditor) updateDropdown(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
+	opts := be.dropdownOptions()
+	switch key.String() {
+	case "j", "down":
+		if be.ddOptIdx < len(opts)-1 {
+			be.ddOptIdx++
+		}
+	case "k", "up":
+		if be.ddOptIdx > 0 {
+			be.ddOptIdx--
+		}
+	case "g":
+		be.ddOptIdx = 0
+	case "G":
+		if len(opts) > 0 {
+			be.ddOptIdx = len(opts) - 1
+		}
+	case "enter", " ":
+		be.applyDropdown()
+		be.ddOpen = false
+	case "esc", "ctrl+c":
+		be.ddOpen = false
+	}
+	return be, nil
+}
+
+// dropdownOptions returns the options of the currently active KindSelect field.
+func (be BackendEditor) dropdownOptions() []string {
+	if be.serviceEditor.itemView == beListViewForm {
+		ed := &be.serviceEditor
+		if ed.formIdx < len(ed.form) && ed.form[ed.formIdx].Kind == KindSelect {
+			return ed.form[ed.formIdx].Options
+		}
+	}
+	if be.commEditor.itemView == beListViewForm {
+		ed := &be.commEditor
+		if ed.formIdx < len(ed.form) && ed.form[ed.formIdx].Kind == KindSelect {
+			return ed.form[ed.formIdx].Options
+		}
+	}
+	if be.eventEditor.itemView == beListViewForm {
+		ed := &be.eventEditor
+		if ed.formIdx < len(ed.form) && ed.form[ed.formIdx].Kind == KindSelect {
+			return ed.form[ed.formIdx].Options
+		}
+	}
+	if f := be.mutableFieldPtr(); f != nil {
+		return f.Options
+	}
+	return nil
+}
+
+// applyDropdown writes ddOptIdx back to the active KindSelect field.
+func (be *BackendEditor) applyDropdown() {
+	if be.serviceEditor.itemView == beListViewForm {
+		ed := &be.serviceEditor
+		if ed.formIdx < len(ed.form) {
+			f := &ed.form[ed.formIdx]
+			if f.Kind == KindSelect && be.ddOptIdx < len(f.Options) {
+				f.SelIdx = be.ddOptIdx
+				f.Value = f.Options[be.ddOptIdx]
+				if f.Key == "language" {
+					be.updateServiceFrameworkOptions(ed)
+				}
+			}
+		}
+		return
+	}
+	if be.commEditor.itemView == beListViewForm {
+		ed := &be.commEditor
+		if ed.formIdx < len(ed.form) {
+			f := &ed.form[ed.formIdx]
+			if f.Kind == KindSelect && be.ddOptIdx < len(f.Options) {
+				f.SelIdx = be.ddOptIdx
+				f.Value = f.Options[be.ddOptIdx]
+			}
+		}
+		return
+	}
+	if be.eventEditor.itemView == beListViewForm {
+		ed := &be.eventEditor
+		if ed.formIdx < len(ed.form) {
+			f := &ed.form[ed.formIdx]
+			if f.Kind == KindSelect && be.ddOptIdx < len(f.Options) {
+				f.SelIdx = be.ddOptIdx
+				f.Value = f.Options[be.ddOptIdx]
+			}
+		}
+		return
+	}
+	if f := be.mutableFieldPtr(); f != nil && f.Kind == KindSelect && be.ddOptIdx < len(f.Options) {
+		f.SelIdx = be.ddOptIdx
+		f.Value = f.Options[be.ddOptIdx]
+	}
 }
 
 func (be BackendEditor) updateInsert(msg tea.Msg) (BackendEditor, tea.Cmd) {
@@ -705,7 +816,8 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 		}
 	case "enter", " ":
 		if f := be.mutableFieldPtr(); f != nil && f.Kind == KindSelect {
-			f.CycleNext()
+			be.ddOpen = true
+			be.ddOptIdx = f.SelIdx
 		} else {
 			return be.tryEnterInsert()
 		}
@@ -748,11 +860,17 @@ func (be BackendEditor) updateServiceList(key tea.KeyMsg) (BackendEditor, tea.Cm
 				ed.itemIdx = len(ed.items) - 1
 			}
 		}
-	case "enter", "l", "right":
+	case "enter":
 		if n > 0 {
 			ed.form = copyFields(ed.items[ed.itemIdx])
 			ed.formIdx = 0
 			ed.itemView = beListViewForm
+			be.activeField = 0
+		}
+	case "l", "right":
+		tabs := be.activeTabs()
+		if be.activeTabIdx < len(tabs)-1 {
+			be.activeTabIdx++
 			be.activeField = 0
 		}
 	case "h", "left":
@@ -781,11 +899,8 @@ func (be BackendEditor) updateServiceForm(key tea.KeyMsg) (BackendEditor, tea.Cm
 	case "enter", " ":
 		f := &ed.form[ed.formIdx]
 		if f.Kind == KindSelect {
-			f.CycleNext()
-			// If language changed, update framework options
-			if f.Key == "language" {
-				be.updateServiceFrameworkOptions(ed)
-			}
+			be.ddOpen = true
+			be.ddOptIdx = f.SelIdx
 		} else {
 			return be.enterServiceFormInsert()
 		}
@@ -877,11 +992,17 @@ func (be BackendEditor) updateCommList(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 				ed.itemIdx = len(ed.items) - 1
 			}
 		}
-	case "enter", "l", "right":
+	case "enter":
 		if n > 0 {
 			ed.form = copyFields(ed.items[ed.itemIdx])
 			ed.formIdx = 0
 			ed.itemView = beListViewForm
+			be.activeField = 0
+		}
+	case "l", "right":
+		tabs := be.activeTabs()
+		if be.activeTabIdx < len(tabs)-1 {
+			be.activeTabIdx++
 			be.activeField = 0
 		}
 	case "h", "left":
@@ -906,7 +1027,8 @@ func (be BackendEditor) updateCommForm(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 	case "enter", " ":
 		f := &ed.form[ed.formIdx]
 		if f.Kind == KindSelect {
-			f.CycleNext()
+			be.ddOpen = true
+			be.ddOptIdx = f.SelIdx
 		} else {
 			return be.enterCommFormInsert()
 		}
@@ -986,7 +1108,8 @@ func (be BackendEditor) updateMessaging(key tea.KeyMsg) (BackendEditor, tea.Cmd)
 		if be.activeField < brokerCount {
 			f := &be.MessagingFields[be.activeField]
 			if f.Kind == KindSelect {
-				f.CycleNext()
+				be.ddOpen = true
+				be.ddOptIdx = f.SelIdx
 			}
 		} else {
 			eventIdx := be.activeField - brokerCount
@@ -1040,7 +1163,8 @@ func (be BackendEditor) updateEventForm(key tea.KeyMsg) (BackendEditor, tea.Cmd)
 	case "enter", " ":
 		f := &ed.form[ed.formIdx]
 		if f.Kind == KindSelect {
-			f.CycleNext()
+			be.ddOpen = true
+			be.ddOptIdx = f.SelIdx
 		} else {
 			return be.enterEventFormInsert()
 		}
@@ -1245,7 +1369,7 @@ func (be BackendEditor) viewSubTabs(w, h int) string {
 	tab := be.activeTab()
 	switch tab {
 	case beTabEnv:
-		lines = append(lines, renderFormFields(w, be.EnvFields, be.activeField, be.internalMode == beInsert, be.formInput)...)
+		lines = append(lines, renderFormFieldsWithDropdown(w, be.EnvFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 	case beTabServices:
 		lines = append(lines, be.viewServiceEditor(w)...)
 	case beTabComm:
@@ -1253,9 +1377,9 @@ func (be BackendEditor) viewSubTabs(w, h int) string {
 	case beTabMessaging:
 		lines = append(lines, be.viewMessaging(w)...)
 	case beTabAPIGW:
-		lines = append(lines, renderFormFields(w, be.APIGWFields, be.activeField, be.internalMode == beInsert, be.formInput)...)
+		lines = append(lines, renderFormFieldsWithDropdown(w, be.APIGWFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 	case beTabAuth:
-		lines = append(lines, renderFormFields(w, be.AuthFields, be.activeField, be.internalMode == beInsert, be.formInput)...)
+		lines = append(lines, renderFormFieldsWithDropdown(w, be.AuthFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 	}
 
 	return fillTildes(lines, h)
@@ -1311,7 +1435,7 @@ func (be BackendEditor) viewServiceEditor(w int) []string {
 
 	var lines []string
 	lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
-	lines = append(lines, renderFormFields(w, fields, ed.formIdx, be.internalMode == beInsert, be.formInput)...)
+	lines = append(lines, renderFormFieldsWithDropdown(w, fields, ed.formIdx, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 	return lines
 }
 
@@ -1347,7 +1471,7 @@ func (be BackendEditor) viewCommEditor(w int) []string {
 	}
 	var lines []string
 	lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(title), "")
-	lines = append(lines, renderFormFields(w, ed.form, ed.formIdx, be.internalMode == beInsert, be.formInput)...)
+	lines = append(lines, renderFormFieldsWithDropdown(w, ed.form, ed.formIdx, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 	return lines
 }
 
@@ -1360,7 +1484,7 @@ func (be BackendEditor) viewMessaging(w int) []string {
 		}
 		var lines []string
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
-		lines = append(lines, renderFormFields(w, ed.form, ed.formIdx, be.internalMode == beInsert, be.formInput)...)
+		lines = append(lines, renderFormFieldsWithDropdown(w, ed.form, ed.formIdx, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
 		return lines
 	}
 
@@ -1370,6 +1494,7 @@ func (be BackendEditor) viewMessaging(w int) []string {
 
 	brokerCount := len(be.MessagingFields)
 	// Render broker fields in upper section
+	const msgDDIndent = 21 // lineNumW(4) + labelW(14) + eqW(3)
 	for i, f := range be.MessagingFields {
 		isCur := i == be.activeField
 		lineNo := StyleLineNum.Render(fmt.Sprintf("%3d ", i+1))
@@ -1385,7 +1510,9 @@ func (be BackendEditor) viewMessaging(w int) []string {
 		eq := StyleEquals.Render(" = ")
 		val := f.DisplayValue()
 		var valStr string
-		if isCur {
+		if isCur && be.ddOpen {
+			valStr = StyleFieldValActive.Render(val) + StyleSelectArrow.Render(" ▴")
+		} else if isCur {
 			valStr = StyleFieldValActive.Render(val) + StyleSelectArrow.Render(" ▾")
 		} else {
 			valStr = StyleFieldVal.Render(val) + StyleSelectArrow.Render(" ▾")
@@ -1399,6 +1526,25 @@ func (be BackendEditor) viewMessaging(w int) []string {
 			row = StyleCurLine.Render(row)
 		}
 		lines = append(lines, row)
+		// Inline dropdown for active broker field
+		if isCur && be.ddOpen {
+			indent := strings.Repeat(" ", msgDDIndent)
+			for j, opt := range f.Options {
+				isHL := j == be.ddOptIdx
+				var optRow string
+				if isHL {
+					optRow = indent + StyleFieldValActive.Render("▶ "+opt)
+					rw := lipgloss.Width(optRow)
+					if rw < w {
+						optRow += strings.Repeat(" ", w-rw)
+					}
+					optRow = StyleCurLine.Render(optRow)
+				} else {
+					optRow = indent + StyleFieldVal.Render("  "+opt)
+				}
+				lines = append(lines, optRow)
+			}
+		}
 	}
 
 	// Divider + event catalog

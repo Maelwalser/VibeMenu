@@ -169,7 +169,9 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Global keys always processed regardless of section.
 	switch key.String() {
 	case "ctrl+c":
-		return m, tea.Quit
+		// Behave like Escape: exit insert/form/dropdown modes in sub-editors
+		escMsg := tea.KeyMsg{Type: tea.KeyEsc}
+		return m.delegateUpdate(escMsg)
 
 	case ":":
 		m.mode = ModeCommand
@@ -228,7 +230,7 @@ func (m Model) updateInsert(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
 	if ok {
 		switch key.String() {
-		case "esc":
+		case "esc", "ctrl+c":
 			return m.exitInsert()
 		case "tab":
 			m = m.saveActiveInput()
@@ -303,7 +305,7 @@ func (m Model) updateCommand(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch key.String() {
-	case "esc":
+	case "esc", "ctrl+c":
 		m.mode = ModeNormal
 		m.cmdBuffer = ""
 	case "enter":

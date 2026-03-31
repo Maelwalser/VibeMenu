@@ -112,15 +112,124 @@ const (
 	LogOther      LogSolution = "other"
 )
 
+// ── Database source definitions ───────────────────────────────────────────────
+
+// DBSourceDef describes a named database or cache source used in the project.
+type DBSourceDef struct {
+	Alias     string       `json:"alias"`              // e.g. "primary", "cache", "analytics"
+	Type      DatabaseType `json:"type"`
+	Version   string       `json:"version,omitempty"`
+	Namespace string       `json:"namespace,omitempty"` // schema / keyspace / database name
+	IsCache   bool         `json:"is_cache"`
+	Notes     string       `json:"notes,omitempty"`
+}
+
+// ── Column / Entity definitions ───────────────────────────────────────────────
+
+// ColumnType enumerates the SQL/schema data types for a column.
+type ColumnType string
+
+const (
+	ColTypeText        ColumnType = "text"
+	ColTypeVarchar     ColumnType = "varchar"
+	ColTypeChar        ColumnType = "char"
+	ColTypeInt         ColumnType = "int"
+	ColTypeBigInt      ColumnType = "bigint"
+	ColTypeSmallInt    ColumnType = "smallint"
+	ColTypeSerial      ColumnType = "serial"
+	ColTypeBigSerial   ColumnType = "bigserial"
+	ColTypeBoolean     ColumnType = "boolean"
+	ColTypeFloat       ColumnType = "float"
+	ColTypeDouble      ColumnType = "double"
+	ColTypeDecimal     ColumnType = "decimal"
+	ColTypeJSON        ColumnType = "json"
+	ColTypeJSONB       ColumnType = "jsonb"
+	ColTypeUUID        ColumnType = "uuid"
+	ColTypeTimestamp   ColumnType = "timestamp"
+	ColTypeTimestampTZ ColumnType = "timestamptz"
+	ColTypeDate        ColumnType = "date"
+	ColTypeTime        ColumnType = "time"
+	ColTypeBytea       ColumnType = "bytea"
+	ColTypeEnum        ColumnType = "enum"
+	ColTypeArray       ColumnType = "array"
+	ColTypeOther       ColumnType = "other"
+)
+
+// CascadeAction defines the referential action on a foreign key.
+type CascadeAction string
+
+const (
+	CascadeNoAction   CascadeAction = "NO ACTION"
+	CascadeRestrict   CascadeAction = "RESTRICT"
+	CascadeCascade    CascadeAction = "CASCADE"
+	CascadeSetNull    CascadeAction = "SET NULL"
+	CascadeSetDefault CascadeAction = "SET DEFAULT"
+)
+
+// IndexType enumerates supported index algorithms.
+type IndexType string
+
+const (
+	IndexBTree IndexType = "btree"
+	IndexHash  IndexType = "hash"
+	IndexGIN   IndexType = "gin"
+	IndexGIST  IndexType = "gist"
+	IndexBRIN  IndexType = "brin"
+)
+
+// ForeignKey describes a column-level foreign key reference and its referential actions.
+type ForeignKey struct {
+	RefEntity string        `json:"ref_entity"`
+	RefColumn string        `json:"ref_column"`
+	OnDelete  CascadeAction `json:"on_delete"`
+	OnUpdate  CascadeAction `json:"on_update"`
+}
+
+// ColumnDef fully specifies a single column within an entity.
+type ColumnDef struct {
+	Name       string      `json:"name"`
+	Type       ColumnType  `json:"type"`
+	Length     string      `json:"length,omitempty"`     // e.g. "255" for varchar(255)
+	Nullable   bool        `json:"nullable"`
+	PrimaryKey bool        `json:"primary_key"`
+	Unique     bool        `json:"unique"`
+	Default    string      `json:"default,omitempty"`
+	Check      string      `json:"check,omitempty"`      // SQL CHECK expression
+	ForeignKey *ForeignKey `json:"foreign_key,omitempty"`
+	Index      bool        `json:"index"`
+	IndexType  IndexType   `json:"index_type,omitempty"`
+	Notes      string      `json:"notes,omitempty"`
+}
+
+// UniqueConstraint represents a composite unique constraint across multiple columns.
+type UniqueConstraint struct {
+	Name    string   `json:"name,omitempty"`
+	Columns []string `json:"columns"`
+}
+
+// EntityDef defines a domain entity (table/collection) and all its columns.
+type EntityDef struct {
+	Name        string `json:"name"`
+	Database    string `json:"database,omitempty"`    // alias ref to DBSourceDef
+	Description string `json:"description,omitempty"`
+
+	// Caching
+	Cached     bool   `json:"cached"`
+	CacheStore string `json:"cache_store,omitempty"` // alias of a cache DBSourceDef
+	CacheTTL   string `json:"cache_ttl,omitempty"`   // e.g. "5m", "1h", "24h"
+
+	Columns           []ColumnDef        `json:"columns"`
+	UniqueConstraints []UniqueConstraint `json:"unique_constraints,omitempty"`
+	Notes             string             `json:"notes,omitempty"`
+}
+
 // ── Phase 1: Universal Global Constants ──────────────────────────────────────
 
-// DomainPillar captures entity relationships, RBAC, and compliance boundaries.
+// DomainPillar captures entity schemas, RBAC, and compliance boundaries.
 type DomainPillar struct {
-	EntityRelationships string `json:"entity_relationships"` // ER model description
-	Cardinality         string `json:"cardinality"`          // e.g. "User 1:N Order"
-	CascadingRules      string `json:"cascading_rules"`
-	RBACMatrix          string `json:"rbac_matrix"`
-	Compliance          string `json:"compliance"` // GDPR, HIPAA, PCI-DSS, none
+	Entities   []EntityDef `json:"entities,omitempty"`
+	RBACMatrix string      `json:"rbac_matrix"`
+	Compliance string      `json:"compliance"` // GDPR, HIPAA, PCI-DSS, none
 }
 
 // TopologyPillar defines the structural model and inter-domain contracts.
@@ -142,17 +251,24 @@ type GlobalNFRPillar struct {
 
 // ── Phase 2: Domain-Specific Execution Paths ─────────────────────────────────
 
-// BackendPillar covers server compute, runtime, databases, queues, and external APIs.
+// ServiceDef represents one backend module or microservice.
+type ServiceDef struct {
+	Name           string `json:"name"`
+	Responsibility string `json:"responsibility"`
+	Language       string `json:"language"`
+	Framework      string `json:"framework"`
+}
+
+// BackendPillar covers compute environment, architecture pattern, and service definitions.
 type BackendPillar struct {
+	ArchPattern   ArchPattern  `json:"arch_pattern"`
 	ComputeEnv    ComputeEnv   `json:"compute_env"`
 	CloudProvider string       `json:"cloud_provider,omitempty"`
-	Runtime       string       `json:"runtime"`        // e.g. "Go 1.23"
-	Framework     string       `json:"framework"`      // e.g. "Gin", "Echo"
-	PrimaryDB     DatabaseType `json:"primary_db"`
-	CacheStore    CacheStore   `json:"cache_store"`
-	CacheStrategy string       `json:"cache_strategy"` // TTL / event-driven / mixed
-	MessageBroker string       `json:"message_broker"` // Kafka, RabbitMQ, SQS, none
-	ExternalAPIs  string       `json:"external_apis"`  // retry, rate-limit, fallback notes
+	// Monolith: single app language and framework.
+	Language  string `json:"language,omitempty"`
+	Framework string `json:"framework,omitempty"`
+	// Microservices / Modular-monolith: per-service definitions.
+	Services []ServiceDef `json:"services,omitempty"`
 }
 
 // FrontendPillar covers web rendering, framework, state management, styling, and browser support.
@@ -200,10 +316,9 @@ type TelemetryPillar struct {
 type Manifest struct {
 	CreatedAt time.Time `json:"created_at"`
 
-	// Phase 1 – Universal Global Constants
-	Domain    DomainPillar    `json:"domain"`
-	Topology  TopologyPillar  `json:"topology"`
-	GlobalNFR GlobalNFRPillar `json:"global_nfr"`
+	// Named database / cache sources and entity definitions
+	Databases []DBSourceDef `json:"databases,omitempty"`
+	Entities  []EntityDef   `json:"entities,omitempty"`
 
 	// Phase 2 – Domain-Specific Execution Paths
 	Backend  BackendPillar  `json:"backend"`

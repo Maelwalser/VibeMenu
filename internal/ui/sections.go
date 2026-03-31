@@ -4,9 +4,10 @@ package ui
 type FieldKind int
 
 const (
-	KindText     FieldKind = iota // single-line text input
-	KindSelect                   // cycle through a list of options
-	KindTextArea                 // multi-line text input
+	KindText      FieldKind = iota // single-line text input
+	KindSelect                    // cycle through a list of options
+	KindTextArea                  // multi-line text input
+	KindDataModel                 // sentinel: delegates to DataEditor
 )
 
 // Field represents a single form field within a section.
@@ -65,175 +66,38 @@ type Section struct {
 	Fields []Field
 }
 
-// initSections returns the nine section definitions across three phases.
+// initSections returns the section definitions across three phases.
 func initSections() []Section {
 	return []Section{
-		// ── Phase 1 · Universal Global Constants ──────────────────────────────
-
-		{
-			ID:    "domain",
-			Abbr:  "DOMAIN",
-			Title: "Phase 1 · Domain & Business Logic",
-			Desc:  "Entity relationships, RBAC matrix, and compliance boundaries.",
-			Fields: []Field{
-				{
-					Key:   "er_model",
-					Label: "er_model      ",
-					Kind:  KindTextArea,
-				},
-				{
-					Key:     "cardinality",
-					Label:   "cardinality   ",
-					Kind:    KindSelect,
-					Options: []string{"1:1", "1:N", "M:N", "mixed"},
-					SelIdx:  3,
-					Value:   "mixed",
-				},
-				{
-					Key:   "cascading",
-					Label: "cascading     ",
-					Kind:  KindText,
-				},
-				{
-					Key:   "rbac_matrix",
-					Label: "rbac_matrix   ",
-					Kind:  KindTextArea,
-				},
-				{
-					Key:     "compliance",
-					Label:   "compliance    ",
-					Kind:    KindSelect,
-					Options: []string{"none", "GDPR", "HIPAA", "PCI-DSS", "GDPR+HIPAA", "custom"},
-				},
-			},
-		},
-
-		{
-			ID:    "topology",
-			Abbr:  "TOPO",
-			Title: "Phase 1 · System Topology & Communication",
-			Desc:  "Architecture pattern and inter-domain communication contracts.",
-			Fields: []Field{
-				{
-					Key:     "arch_pattern",
-					Label:   "arch_pattern  ",
-					Kind:    KindSelect,
-					Options: []string{"monolith", "modular-monolith", "microservices", "event-driven"},
-				},
-				{
-					Key:     "comm_protocol",
-					Label:   "comm_protocol ",
-					Kind:    KindSelect,
-					Options: []string{"REST", "GraphQL", "gRPC", "WebSockets", "mixed"},
-				},
-				{
-					Key:     "serialization",
-					Label:   "serialization ",
-					Kind:    KindSelect,
-					Options: []string{"JSON", "Protobuf", "MessagePack", "mixed"},
-				},
-				{
-					Key:   "domain_notes",
-					Label: "domain_notes  ",
-					Kind:  KindTextArea,
-				},
-			},
-		},
-
-		{
-			ID:    "gnfr",
-			Abbr:  "GNFR",
-			Title: "Phase 1 · Global Non-Functional Requirements",
-			Desc:  "Quantifiable SLOs and disaster recovery objectives.",
-			Fields: []Field{
-				{
-					Key:   "uptime_slo",
-					Label: "uptime_slo    ",
-					Kind:  KindText,
-					Value: "99.9%",
-				},
-				{
-					Key:   "concurrent_conn",
-					Label: "concurrent_con",
-					Kind:  KindText,
-				},
-				{
-					Key:   "rto",
-					Label: "rto           ",
-					Kind:  KindText,
-				},
-				{
-					Key:   "rpo",
-					Label: "rpo           ",
-					Kind:  KindText,
-				},
-				{
-					Key:   "nfr_notes",
-					Label: "nfr_notes     ",
-					Kind:  KindTextArea,
-				},
-			},
-		},
-
 		// ── Phase 2 · Domain-Specific Execution Paths ─────────────────────────
 
 		{
 			ID:    "backend",
 			Abbr:  "BACK",
-			Title: "Phase 2 · Path A: Backend Server / API",
-			Desc:  "Compute environment, runtime, data persistence, queuing, and external APIs.",
+			Title: "Phase 2 · Backend",
+			Desc:  "Architecture pattern, environment, and service definitions.",
 			Fields: []Field{
-				{
-					Key:     "compute_env",
-					Label:   "compute_env   ",
-					Kind:    KindSelect,
-					Options: []string{"serverless", "containerized", "bare-metal/VM"},
-				},
-				{
-					Key:     "cloud_provider",
-					Label:   "cloud_provider",
-					Kind:    KindSelect,
-					Options: []string{"N/A", "AWS", "GCP", "Azure"},
-				},
-				{
-					Key:   "runtime",
-					Label: "runtime       ",
-					Kind:  KindText,
-				},
-				{
-					Key:   "be_framework",
-					Label: "be_framework  ",
-					Kind:  KindText,
-				},
-				{
-					Key:     "primary_db",
-					Label:   "primary_db    ",
-					Kind:    KindSelect,
-					Options: []string{"PostgreSQL", "MySQL", "MongoDB", "DynamoDB", "SQLite", "other"},
-				},
-				{
-					Key:     "cache_store",
-					Label:   "cache_store   ",
-					Kind:    KindSelect,
-					Options: []string{"none", "Redis", "Memcached"},
-				},
-				{
-					Key:     "cache_strategy",
-					Label:   "cache_strategy",
-					Kind:    KindSelect,
-					Options: []string{"none", "TTL", "event-driven", "mixed"},
-				},
-				{
-					Key:     "msg_broker",
-					Label:   "msg_broker    ",
-					Kind:    KindSelect,
-					Options: []string{"none", "RabbitMQ", "Kafka", "SQS", "other"},
-				},
-				{
-					Key:   "external_apis",
-					Label: "external_apis ",
-					Kind:  KindTextArea,
-				},
+				{Key: "_backend", Kind: KindDataModel},
+			},
+		},
+
+		{
+			ID:    "databases",
+			Abbr:  "DBs",
+			Title: "Phase 2 · Database Sources",
+			Desc:  "Define all database and cache sources — referenced by entities in the DATA tab.",
+			Fields: []Field{
+				{Key: "_db_model", Kind: KindDataModel},
+			},
+		},
+
+		{
+			ID:    "entities",
+			Abbr:  "DATA",
+			Title: "Phase 2 · Data Model",
+			Desc:  "Define domain entities, columns, types, constraints, and foreign keys.",
+			Fields: []Field{
+				{Key: "_data_model", Kind: KindDataModel},
 			},
 		},
 

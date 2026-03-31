@@ -28,12 +28,12 @@ func main() {
 	// After the TUI exits, print a summary if the manifest was populated.
 	if m, ok := finalModel.(ui.Model); ok {
 		mf := m.BuildManifest()
-		if mf.Topology.ArchPattern != "" {
+		if mf.Backend.ArchPattern != "" {
 			fmt.Printf("\nManifest saved to %s\n", manifestPath)
-			fmt.Printf("Topology  : %s · %s\n", mf.Topology.ArchPattern, mf.Topology.CommProtocol)
-			fmt.Printf("Backend   : %s  [%s]\n", mf.Backend.Runtime, mf.Backend.PrimaryDB)
-			fmt.Printf("SLO       : %s uptime  RTO=%s  RPO=%s\n",
-				mf.GlobalNFR.UptimeSLO, mf.GlobalNFR.RTO, mf.GlobalNFR.RPO)
+			fmt.Printf("Backend   : %s  [%s]\n", mf.Backend.ArchPattern, mf.Backend.ComputeEnv)
+			fmt.Printf("Entities  : %d defined\n", len(mf.Entities))
+			fmt.Printf("Databases : %d defined\n", len(mf.Databases))
+			fmt.Printf("Services  : %d defined\n", len(mf.Backend.Services))
 		}
 	}
 }

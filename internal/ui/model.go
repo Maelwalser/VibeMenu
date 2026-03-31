@@ -46,6 +46,13 @@ type Model struct {
 	textInput textinput.Model
 	textArea  textarea.Model
 
+	// backendEditor manages the structured backend configuration for the BACK section.
+	backendEditor BackendEditor
+	// dataEditor manages the structured entity/column schema for the DATA section.
+	dataEditor DataEditor
+	// dbEditor manages the named database/cache sources for the DATABASES section.
+	dbEditor DBEditor
+
 	cmdBuffer string // characters typed after ':'
 	statusMsg string // transient status line message
 	statusErr bool   // true = red, false = green
@@ -78,16 +85,48 @@ func NewModel(onSave SaveFunc) Model {
 		Background(lipgloss.Color(clrBgHL))
 
 	return Model{
-		sections:  initSections(),
-		textInput: ti,
-		textArea:  ta,
-		onSave:    onSave,
+		sections:      initSections(),
+		textInput:     ti,
+		textArea:      ta,
+		backendEditor: newBackendEditor(),
+		dataEditor:    newDataEditor(),
+		dbEditor:      newDBEditor(),
+		onSave:        onSave,
 	}
 }
 
 // Init satisfies tea.Model.
 func (m Model) Init() tea.Cmd {
 	return nil
+}
+
+// isBackendSection returns true when the active section is the backend editor.
+func (m Model) isBackendSection() bool {
+	return m.sections[m.activeSection].ID == "backend"
+}
+
+// isDataSection returns true when the active section is the entity/column editor.
+func (m Model) isDataSection() bool {
+	return m.sections[m.activeSection].ID == "entities"
+}
+
+// isDBSection returns true when the active section is the database sources editor.
+func (m Model) isDBSection() bool {
+	return m.sections[m.activeSection].ID == "databases"
+}
+
+// activeMode returns the effective mode, delegating to sub-editors when appropriate.
+func (m Model) activeMode() Mode {
+	if m.isBackendSection() {
+		return m.backendEditor.Mode()
+	}
+	if m.isDataSection() {
+		return m.dataEditor.Mode()
+	}
+	if m.isDBSection() {
+		return m.dbEditor.Mode()
+	}
+	return m.mode
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -119,11 +158,59 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	m.statusMsg = "" // clear on any keypress in normal mode
 
+	// Always handle global keys regardless of section.
 	switch key.String() {
 	case "ctrl+c":
 		return m, tea.Quit
 
-	// ── Vertical navigation ──────────────────────────────────────────────
+	case ":":
+		m.mode = ModeCommand
+		m.cmdBuffer = ""
+		return m, nil
+
+	case "ctrl+s":
+		return m.execSave()
+
+	// ── Section (tab) navigation ─────────────────────────────────────────
+	case "tab":
+		m.activeSection = (m.activeSection + 1) % len(m.sections)
+		m.activeField = 0
+		return m, nil
+
+	case "shift+tab":
+		m.activeSection = (m.activeSection - 1 + len(m.sections)) % len(m.sections)
+		m.activeField = 0
+		return m, nil
+	}
+
+	// Delegate all other input to BackendEditor when in the BACK section.
+	if m.isBackendSection() {
+		var cmd tea.Cmd
+		m.backendEditor, cmd = m.backendEditor.Update(msg)
+		m.modified = true
+		return m, cmd
+	}
+
+	// Delegate all other input to DataEditor when in the DATA section.
+	if m.isDataSection() {
+		var cmd tea.Cmd
+		m.dataEditor, cmd = m.dataEditor.Update(msg)
+		m.modified = true
+		return m, cmd
+	}
+
+	// Delegate all other input to DBEditor when in the DATABASES section.
+	if m.isDBSection() {
+		var cmd tea.Cmd
+		m.dbEditor, cmd = m.dbEditor.Update(msg)
+		// Sync available databases into DataEditor so entity settings shows live options.
+		m.dataEditor.availableDbs = m.dbEditor.Sources
+		m.modified = true
+		return m, cmd
+	}
+
+	// ── Standard field navigation ─────────────────────────────────────────
+	switch key.String() {
 	case "j", "down":
 		sec := m.sections[m.activeSection]
 		if m.activeField < len(sec.Fields)-1 {
@@ -135,12 +222,11 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeField--
 		}
 
-	// ── Section (tab) navigation ─────────────────────────────────────────
-	case "tab", "l", "right":
+	case "l", "right":
 		m.activeSection = (m.activeSection + 1) % len(m.sections)
 		m.activeField = 0
 
-	case "shift+tab", "h", "left":
+	case "h", "left":
 		m.activeSection = (m.activeSection - 1 + len(m.sections)) % len(m.sections)
 		m.activeField = 0
 
@@ -173,15 +259,6 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 			f.CyclePrev()
 			m.modified = true
 		}
-
-	// ── Command mode ──────────────────────────────────────────────────────
-	case ":":
-		m.mode = ModeCommand
-		m.cmdBuffer = ""
-
-	// ── Quick save ────────────────────────────────────────────────────────
-	case "ctrl+s":
-		return m.execSave()
 	}
 
 	return m, nil
@@ -387,40 +464,11 @@ func (m Model) BuildManifest() *manifest.Manifest {
 	}
 
 	return &manifest.Manifest{
-		// Phase 1 – Universal Global Constants
-		Domain: manifest.DomainPillar{
-			EntityRelationships: get("domain", "er_model"),
-			Cardinality:         get("domain", "cardinality"),
-			CascadingRules:      get("domain", "cascading"),
-			RBACMatrix:          get("domain", "rbac_matrix"),
-			Compliance:          get("domain", "compliance"),
-		},
-		Topology: manifest.TopologyPillar{
-			ArchPattern:   manifest.ArchPattern(get("topology", "arch_pattern")),
-			CommProtocol:  manifest.CommProtocol(get("topology", "comm_protocol")),
-			Serialization: manifest.SerializationFmt(get("topology", "serialization")),
-			DomainNotes:   get("topology", "domain_notes"),
-		},
-		GlobalNFR: manifest.GlobalNFRPillar{
-			UptimeSLO:      get("gnfr", "uptime_slo"),
-			ConcurrentConn: get("gnfr", "concurrent_conn"),
-			RTO:            get("gnfr", "rto"),
-			RPO:            get("gnfr", "rpo"),
-			NFRNotes:       get("gnfr", "nfr_notes"),
-		},
+		Databases: m.dbEditor.Sources,
+		Entities:  m.dataEditor.Entities,
 
 		// Phase 2 – Domain-Specific Execution Paths
-		Backend: manifest.BackendPillar{
-			ComputeEnv:    manifest.ComputeEnv(get("backend", "compute_env")),
-			CloudProvider: get("backend", "cloud_provider"),
-			Runtime:       get("backend", "runtime"),
-			Framework:     get("backend", "be_framework"),
-			PrimaryDB:     manifest.DatabaseType(get("backend", "primary_db")),
-			CacheStore:    manifest.CacheStore(get("backend", "cache_store")),
-			CacheStrategy: get("backend", "cache_strategy"),
-			MessageBroker: get("backend", "msg_broker"),
-			ExternalAPIs:  get("backend", "external_apis"),
-		},
+		Backend: m.backendEditor.ToManifest(),
 		Frontend: manifest.FrontendPillar{
 			Rendering:     manifest.RenderingMode(get("frontend", "rendering")),
 			Framework:     get("frontend", "fe_framework"),
@@ -506,6 +554,21 @@ func (m Model) renderHeader(w int) string {
 func (m Model) renderContent(w int) string {
 	sec := m.sections[m.activeSection]
 	ch := m.contentHeight()
+
+	// Delegate to BackendEditor for the backend section.
+	if m.isBackendSection() {
+		return m.backendEditor.View(w, ch)
+	}
+
+	// Delegate to DataEditor for the entities section.
+	if m.isDataSection() {
+		return m.dataEditor.View(w, ch)
+	}
+
+	// Delegate to DBEditor for the databases section.
+	if m.isDBSection() {
+		return m.dbEditor.View(w, ch)
+	}
 
 	// When a textarea field is active in INSERT mode, give it the full area.
 	if m.mode == ModeInsert {
@@ -650,7 +713,7 @@ func (m Model) renderTabBar(w int) string {
 // renderStatusLine renders the bottom status bar.
 func (m Model) renderStatusLine(w int) string {
 	var modeLabel string
-	switch m.mode {
+	switch m.activeMode() {
 	case ModeNormal:
 		modeLabel = StyleNormalMode.Render("NORMAL")
 	case ModeInsert:
@@ -686,11 +749,40 @@ func (m Model) renderStatusLine(w int) string {
 
 // renderCmdLine renders the very bottom command / hint line.
 func (m Model) renderCmdLine(w int) string {
-	switch m.mode {
-	case ModeCommand:
+	// Command mode is always global.
+	if m.mode == ModeCommand {
 		cursor := StyleCursor.Render(" ")
 		return StyleCmdLine.Render(":"+m.cmdBuffer) + cursor
+	}
 
+	// Delegate hint line to BackendEditor when in the backend section.
+	if m.isBackendSection() {
+		line := m.backendEditor.HintLine()
+		if lipgloss.Width(line) > w {
+			line = line[:w-1]
+		}
+		return line
+	}
+
+	// Delegate hint line to DataEditor when in the entities section.
+	if m.isDataSection() {
+		line := m.dataEditor.HintLine()
+		if lipgloss.Width(line) > w {
+			line = line[:w-1]
+		}
+		return line
+	}
+
+	// Delegate hint line to DBEditor when in the databases section.
+	if m.isDBSection() {
+		line := m.dbEditor.HintLine()
+		if lipgloss.Width(line) > w {
+			line = line[:w-1]
+		}
+		return line
+	}
+
+	switch m.mode {
 	case ModeNormal:
 		hints := []string{
 			StyleHelpKey.Render("j/k") + StyleHelpDesc.Render(" navigate"),

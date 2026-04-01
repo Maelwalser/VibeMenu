@@ -53,6 +53,9 @@ type Model struct {
 	frontendEditor  FrontendEditor
 	infraEditor     InfraEditor
 	crossCutEditor  CrossCutEditor
+	realizeEditor   RealizeEditor
+
+	realizeTriggered bool
 
 	cmdBuffer string
 	statusMsg string
@@ -61,6 +64,9 @@ type Model struct {
 
 	width  int
 	height int
+
+	providerMenuOpen bool
+	providerMenu     ProviderMenu
 
 	onSave SaveFunc
 }
@@ -95,6 +101,8 @@ func NewModel(onSave SaveFunc) Model {
 		frontendEditor:  newFrontendEditor(),
 		infraEditor:     newInfraEditor(),
 		crossCutEditor:  newCrossCutEditor(),
+		realizeEditor:   newRealizeEditor(),
+		providerMenu:    newProviderMenu(),
 		onSave:          onSave,
 	}
 }
@@ -110,12 +118,13 @@ func (m Model) activeSectionID() string {
 	return m.sections[m.activeSection].ID
 }
 
-func (m Model) isBackendSection() bool    { return m.activeSectionID() == "backend" }
-func (m Model) isDataSection() bool       { return m.activeSectionID() == "data" }
-func (m Model) isContractsSection() bool  { return m.activeSectionID() == "contracts" }
-func (m Model) isFrontendSection() bool   { return m.activeSectionID() == "frontend" }
-func (m Model) isInfraSection() bool      { return m.activeSectionID() == "infrastructure" }
-func (m Model) isCrossCutSection() bool   { return m.activeSectionID() == "crosscut" }
+func (m Model) isBackendSection() bool   { return m.activeSectionID() == "backend" }
+func (m Model) isDataSection() bool      { return m.activeSectionID() == "data" }
+func (m Model) isContractsSection() bool { return m.activeSectionID() == "contracts" }
+func (m Model) isFrontendSection() bool  { return m.activeSectionID() == "frontend" }
+func (m Model) isInfraSection() bool     { return m.activeSectionID() == "infrastructure" }
+func (m Model) isCrossCutSection() bool  { return m.activeSectionID() == "crosscut" }
+func (m Model) isRealizeSection() bool   { return m.activeSectionID() == "realize" }
 
 // activeMode returns the effective mode, delegating to sub-editors when appropriate.
 func (m Model) activeMode() Mode {
@@ -132,6 +141,8 @@ func (m Model) activeMode() Mode {
 		return m.infraEditor.Mode()
 	case m.isCrossCutSection():
 		return m.crossCutEditor.Mode()
+	case m.isRealizeSection():
+		return m.realizeEditor.Mode()
 	}
 	return m.mode
 }
@@ -145,6 +156,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textArea.SetWidth(m.width - 4)
 		m.textArea.SetHeight(m.contentHeight() - 4)
 		return m, nil
+	}
+	if _, ok := msg.(RealizeMsg); ok {
+		m.realizeTriggered = true
+		m2, saveCmd := m.execSave()
+		return m2, tea.Sequence(saveCmd, tea.Quit)
 	}
 
 	switch m.mode {
@@ -166,8 +182,30 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	m.statusMsg = ""
 
+	// Provider menu intercepts all input when open.
+	if m.providerMenuOpen {
+		switch key.String() {
+		case "M":
+			m.providerMenuOpen = false
+		case "esc":
+			// Esc closes the version dropdown first; a second Esc closes the modal.
+			if m.providerMenu.dropdownOpen {
+				m.providerMenu = m.providerMenu.Update(msg)
+			} else {
+				m.providerMenuOpen = false
+			}
+		default:
+			m.providerMenu = m.providerMenu.Update(msg)
+		}
+		return m, nil
+	}
+
 	// Global keys always processed regardless of section.
 	switch key.String() {
+	case "M":
+		m.providerMenuOpen = true
+		return m, nil
+
 	case "ctrl+c":
 		// Behave like Escape: exit insert/form/dropdown modes in sub-editors
 		escMsg := tea.KeyMsg{Type: tea.KeyEsc}
@@ -227,6 +265,9 @@ func (m Model) delegateUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.modified = true
 	case m.isCrossCutSection():
 		m.crossCutEditor, cmd = m.crossCutEditor.Update(msg)
+		m.modified = true
+	case m.isRealizeSection():
+		m.realizeEditor, cmd = m.realizeEditor.Update(msg)
 		m.modified = true
 	}
 
@@ -400,12 +441,16 @@ func (m Model) BuildManifest() *manifest.Manifest {
 		Frontend:  m.frontendEditor.ToManifestFrontendPillar(),
 		Infra:     m.infraEditor.ToManifestInfraPillar(),
 		CrossCut:  m.crossCutEditor.ToManifestCrossCutPillar(),
+		Realize:   m.realizeEditor.ToManifestRealizeOptions(),
 
 		// Legacy flat fields for backward compatibility
 		Databases: dataPillar.Databases,
 		Entities:  dataPillar.Entities,
 	}
 }
+
+// RealizeTriggered reports whether the user requested realization.
+func (m Model) RealizeTriggered() bool { return m.realizeTriggered }
 
 // ── View ──────────────────────────────────────────────────────────────────────
 
@@ -423,9 +468,35 @@ func (m Model) View() string {
 		return "Loading…"
 	}
 
+	base := m.renderBaseView()
+
+	if m.providerMenuOpen {
+		modal := m.providerMenu.View()
+		modalLines := strings.Split(modal, "\n")
+		modalH := len(modalLines)
+		modalW := 0
+		for _, l := range modalLines {
+			if w := lipgloss.Width(l); w > modalW {
+				modalW = w
+			}
+		}
+		x := (m.width - modalW) / 2
+		y := (m.height - modalH) / 2
+		if x < 0 {
+			x = 0
+		}
+		if y < 0 {
+			y = 0
+		}
+		return placeOverlay(base, modal, x, y)
+	}
+
+	return base
+}
+
+func (m Model) renderBaseView() string {
 	var b strings.Builder
 	w := m.width
-
 	b.WriteString(m.renderHeader(w))
 	b.WriteString("\n")
 	b.WriteString(m.renderContent(w))
@@ -434,7 +505,6 @@ func (m Model) View() string {
 	b.WriteString(m.renderStatusLine(w))
 	b.WriteString("\n")
 	b.WriteString(m.renderCmdLine(w))
-
 	return b.String()
 }
 
@@ -470,9 +540,11 @@ func (m Model) renderContent(w int) string {
 		return m.infraEditor.View(w, ch)
 	case m.isCrossCutSection():
 		return m.crossCutEditor.View(w, ch)
+	case m.isRealizeSection():
+		return m.realizeEditor.View(w, ch)
 	}
 
-	// Fallback: should not be reached for 6-section layout
+	// Fallback: should not be reached for 7-section layout
 	sec := m.sections[m.activeSection]
 	return m.renderFieldList(w, ch, sec)
 }
@@ -556,10 +628,15 @@ func (m Model) renderFieldList(w, h int, sec Section) string {
 func (m Model) renderTabBar(w int) string {
 	var parts []string
 	for i, s := range m.sections {
+		badge := m.providerBadge(s.ID)
+		label := s.Abbr
+		if badge != "" {
+			label = s.Abbr + " " + badge
+		}
 		if i == m.activeSection {
-			parts = append(parts, StyleTabActive.Render(s.Abbr))
+			parts = append(parts, StyleTabActive.Render(label))
 		} else {
-			parts = append(parts, StyleTabInactive.Render(s.Abbr))
+			parts = append(parts, StyleTabInactive.Render(label))
 		}
 	}
 	tabs := strings.Join(parts, "")
@@ -568,6 +645,31 @@ func (m Model) renderTabBar(w int) string {
 		tabs += StyleTabBar.Render(strings.Repeat(" ", w-rawW))
 	}
 	return tabs
+}
+
+// providerBadge returns a short colored indicator for the provider assigned to
+// the given section ID, or an empty string if none is assigned.
+func (m Model) providerBadge(sectionID string) string {
+	sel, ok := m.providerMenu.SectionAssignment(sectionID)
+	if !ok {
+		return ""
+	}
+	// One-letter abbreviations per provider.
+	abbrs := map[string]string{
+		"Claude":  "C",
+		"ChatGPT": "G",
+		"Gemini":  "Ge",
+		"Mistral": "Mi",
+		"Llama":   "L",
+		"Custom":  "?",
+	}
+	letter, ok := abbrs[sel.Provider]
+	if !ok {
+		letter = sel.Provider[:1]
+	}
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color(clrGreen)).
+		Render("[" + letter + "]")
 }
 
 func (m Model) renderStatusLine(w int) string {
@@ -627,6 +729,8 @@ func (m Model) renderCmdLine(w int) string {
 		line = m.infraEditor.HintLine()
 	case m.isCrossCutSection():
 		line = m.crossCutEditor.HintLine()
+	case m.isRealizeSection():
+		line = m.realizeEditor.HintLine()
 	default:
 		switch m.mode {
 		case ModeNormal:

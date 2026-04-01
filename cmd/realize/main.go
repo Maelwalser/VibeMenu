@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 
+	"github.com/vibe-mvp/internal/realize/agent"
 	"github.com/vibe-mvp/internal/realize/orchestrator"
 )
 
@@ -26,16 +27,13 @@ func main() {
 		p = runtime.NumCPU()
 	}
 
-	// Resolve auth: -session-token flag > CLAUDE_SESSION_KEY env var > ANTHROPIC_API_KEY (implicit)
-	resolvedToken := *sessionToken
-	if resolvedToken == "" {
-		resolvedToken = os.Getenv("CLAUDE_SESSION_KEY")
+	// Resolve auth: -session-token flag > CLAUDE_SESSION_KEY env var > Claude Code OAuth > ANTHROPIC_API_KEY
+	explicit := *sessionToken
+	if explicit == "" {
+		explicit = os.Getenv("CLAUDE_SESSION_KEY")
 	}
-	if resolvedToken != "" {
-		fmt.Fprintln(os.Stderr, "realize: using Claude Pro/Max session token")
-	} else {
-		fmt.Fprintln(os.Stderr, "realize: using ANTHROPIC_API_KEY")
-	}
+	resolvedToken, authSource := agent.ResolveAuthToken(explicit)
+	fmt.Fprintf(os.Stderr, "realize: auth: %s\n", authSource)
 
 	cfg := orchestrator.Config{
 		ManifestPath: *manifestPath,

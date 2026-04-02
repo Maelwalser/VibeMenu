@@ -237,6 +237,9 @@ type InfraEditor struct {
 
 	// Vim motion state
 	nav VimNav
+
+	ddOpen   bool
+	ddOptIdx int
 }
 
 func (ie InfraEditor) activeTabEnabled() bool {
@@ -331,6 +334,66 @@ func (ie InfraEditor) ToManifestInfraPillar() manifest.InfraPillar {
 	return p
 }
 
+// FromInfraPillar populates the editor from a saved manifest InfraPillar,
+// reversing the ToManifestInfraPillar() operation.
+func (ie InfraEditor) FromInfraPillar(ip manifest.InfraPillar) InfraEditor {
+	n := ip.Networking
+	if n.DNSProvider != "" || n.ReverseProxy != "" || n.CDN != "" {
+		ie.netEnabled = true
+		ie.networkingFields = setFieldValue(ie.networkingFields, "dns_provider", n.DNSProvider)
+		ie.networkingFields = setFieldValue(ie.networkingFields, "tls_ssl", n.TLSSSL)
+		ie.networkingFields = setFieldValue(ie.networkingFields, "reverse_proxy", n.ReverseProxy)
+		ie.networkingFields = setFieldValue(ie.networkingFields, "cdn", n.CDN)
+		ie.networkingFields = setFieldValue(ie.networkingFields, "primary_domain", n.PrimaryDomain)
+		ie.networkingFields = setFieldValue(ie.networkingFields, "domain_strategy", n.DomainStrategy)
+		ie.networkingFields = setFieldValue(ie.networkingFields, "cors_infra", n.CORSEnforcement)
+		ie.networkingFields = setFieldValue(ie.networkingFields, "ssl_cert", n.SSLCertMgmt)
+	}
+
+	c := ip.CICD
+	if c.Platform != "" {
+		ie.cicdEnabled = true
+		ie.cicdFields = setFieldValue(ie.cicdFields, "platform", c.Platform)
+		ie.cicdFields = setFieldValue(ie.cicdFields, "registry", c.ContainerRegistry)
+		ie.cicdFields = setFieldValue(ie.cicdFields, "deploy_strategy", c.DeployStrategy)
+		ie.cicdFields = setFieldValue(ie.cicdFields, "iac_tool", c.IaCTool)
+		ie.cicdFields = setFieldValue(ie.cicdFields, "secrets_mgmt", c.SecretsMgmt)
+		ie.cicdFields = setFieldValue(ie.cicdFields, "container_runtime", c.ContainerRuntime)
+		ie.cicdFields = setFieldValue(ie.cicdFields, "backup_dr", c.BackupDR)
+	}
+
+	o := ip.Observability
+	if o.Logging != "" || o.Metrics != "" {
+		ie.obsEnabled = true
+		ie.obsFields = setFieldValue(ie.obsFields, "logging", o.Logging)
+		ie.obsFields = setFieldValue(ie.obsFields, "metrics", o.Metrics)
+		ie.obsFields = setFieldValue(ie.obsFields, "tracing", o.Tracing)
+		ie.obsFields = setFieldValue(ie.obsFields, "error_tracking", o.ErrorTracking)
+		boolStr := func(b bool) string {
+			if b {
+				return "true"
+			}
+			return "false"
+		}
+		ie.obsFields = setFieldValue(ie.obsFields, "health_checks", boolStr(o.HealthChecks))
+		ie.obsFields = setFieldValue(ie.obsFields, "alerting", o.Alerting)
+		ie.obsFields = setFieldValue(ie.obsFields, "log_retention", o.LogRetention)
+	}
+
+	e := ip.EnvTopology
+	if e.Stages != "" || e.PromotionPipeline != "" {
+		ie.envEnabled = true
+		ie.envTopoFields = setFieldValue(ie.envTopoFields, "stages", e.Stages)
+		ie.envTopoFields = setFieldValue(ie.envTopoFields, "promotion_pipeline", e.PromotionPipeline)
+		ie.envTopoFields = setFieldValue(ie.envTopoFields, "secret_key_strategy", e.SecretKeyStrategy)
+		ie.envTopoFields = setFieldValue(ie.envTopoFields, "migration_strategy", e.MigrationStrategy)
+		ie.envTopoFields = setFieldValue(ie.envTopoFields, "db_seeding", e.DBSeeding)
+		ie.envTopoFields = setFieldValue(ie.envTopoFields, "preview_envs", e.PreviewEnvs)
+	}
+
+	return ie
+}
+
 // ── Mode / HintLine ───────────────────────────────────────────────────────────
 
 func (ie InfraEditor) Mode() Mode {
@@ -345,10 +408,13 @@ func (ie InfraEditor) HintLine() string {
 		return StyleInsertMode.Render(" -- INSERT -- ") +
 			StyleHelpDesc.Render("  Esc: normal  Tab: next field")
 	}
+	if ie.ddOpen {
+		return hintBar("j/k", "navigate", "Enter/Space", "select", "Esc", "cancel")
+	}
 	if !ie.activeTabEnabled() {
 		return hintBar("a", "configure", "h/l", "sub-tab")
 	}
-	return hintBar("j/k", "navigate", "gg/G", "top/bottom", "[n]j/k", "jump n lines", "Space/Enter", "cycle", "H", "cycle back", "a/i", "edit text", "h/l", "sub-tab")
+	return hintBar("j/k", "navigate", "gg/G", "top/bottom", "[n]j/k", "jump n lines", "Enter/Space", "dropdown", "H", "cycle back", "a/i", "edit text", "h/l", "sub-tab")
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -366,6 +432,10 @@ func (ie InfraEditor) Update(msg tea.Msg) (InfraEditor, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return ie, nil
+	}
+
+	if ie.ddOpen {
+		return ie.updateInfraDropdown(key)
 	}
 
 	switch key.String() {
@@ -420,7 +490,8 @@ func (ie InfraEditor) updateFields(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
 			if idx < n {
 				f := &fields[idx]
 				if f.Kind == KindSelect {
-					f.CycleNext()
+					ie.ddOpen = true
+					ie.ddOptIdx = f.SelIdx
 				} else {
 					switch ie.activeTab {
 					case infraTabNetworking:
@@ -478,6 +549,51 @@ func (ie InfraEditor) updateFields(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
 	case infraTabEnvironments:
 		ie.envTopoFields = fields
 		ie.envTopoFormIdx = idx
+	}
+	return ie, nil
+}
+
+func (ie InfraEditor) updateInfraDropdown(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
+	var f *Field
+	switch ie.activeTab {
+	case infraTabNetworking:
+		if ie.netFormIdx < len(ie.networkingFields) {
+			f = &ie.networkingFields[ie.netFormIdx]
+		}
+	case infraTabCICD:
+		if ie.cicdFormIdx < len(ie.cicdFields) {
+			f = &ie.cicdFields[ie.cicdFormIdx]
+		}
+	case infraTabObservability:
+		if ie.obsFormIdx < len(ie.obsFields) {
+			f = &ie.obsFields[ie.obsFormIdx]
+		}
+	case infraTabEnvironments:
+		if ie.envTopoFormIdx < len(ie.envTopoFields) {
+			f = &ie.envTopoFields[ie.envTopoFormIdx]
+		}
+	}
+	if f == nil {
+		ie.ddOpen = false
+		return ie, nil
+	}
+	switch key.String() {
+	case "j", "down":
+		if ie.ddOptIdx < len(f.Options)-1 {
+			ie.ddOptIdx++
+		}
+	case "k", "up":
+		if ie.ddOptIdx > 0 {
+			ie.ddOptIdx--
+		}
+	case " ", "enter":
+		f.SelIdx = ie.ddOptIdx
+		if ie.ddOptIdx < len(f.Options) {
+			f.Value = f.Options[ie.ddOptIdx]
+		}
+		ie.ddOpen = false
+	case "esc", "b":
+		ie.ddOpen = false
 	}
 	return ie, nil
 }
@@ -616,25 +732,25 @@ func (ie InfraEditor) View(w, h int) string {
 	switch ie.activeTab {
 	case infraTabNetworking:
 		if ie.netEnabled {
-			lines = append(lines, renderFormFields(w, ie.networkingFields, ie.netFormIdx, ie.internalMode == infraInsert, ie.formInput, false, 0)...)
+			lines = append(lines, renderFormFields(w, ie.networkingFields, ie.netFormIdx, ie.internalMode == infraInsert, ie.formInput, ie.ddOpen, ie.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case infraTabCICD:
 		if ie.cicdEnabled {
-			lines = append(lines, renderFormFields(w, ie.cicdFields, ie.cicdFormIdx, ie.internalMode == infraInsert, ie.formInput, false, 0)...)
+			lines = append(lines, renderFormFields(w, ie.cicdFields, ie.cicdFormIdx, ie.internalMode == infraInsert, ie.formInput, ie.ddOpen, ie.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case infraTabObservability:
 		if ie.obsEnabled {
-			lines = append(lines, renderFormFields(w, ie.obsFields, ie.obsFormIdx, ie.internalMode == infraInsert, ie.formInput, false, 0)...)
+			lines = append(lines, renderFormFields(w, ie.obsFields, ie.obsFormIdx, ie.internalMode == infraInsert, ie.formInput, ie.ddOpen, ie.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case infraTabEnvironments:
 		if ie.envEnabled {
-			lines = append(lines, renderFormFields(w, ie.envTopoFields, ie.envTopoFormIdx, ie.internalMode == infraInsert, ie.formInput, false, 0)...)
+			lines = append(lines, renderFormFields(w, ie.envTopoFields, ie.envTopoFormIdx, ie.internalMode == infraInsert, ie.formInput, ie.ddOpen, ie.ddOptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}

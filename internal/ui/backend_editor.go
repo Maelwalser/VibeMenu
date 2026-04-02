@@ -112,6 +112,20 @@ var backendLanguages = []string{
 	"C#/.NET", "Rust", "Ruby", "PHP", "Elixir", "Other",
 }
 
+var backendLintersByLang = map[string][]string{
+	"Go":              {"golangci-lint", "staticcheck", "go vet", "None"},
+	"TypeScript/Node": {"ESLint", "Biome", "TSLint (legacy)", "None"},
+	"Python":          {"Ruff", "Flake8", "Pylint", "mypy", "None"},
+	"Java":            {"Checkstyle", "SpotBugs", "PMD", "SonarLint", "None"},
+	"Kotlin":          {"ktlint", "detekt", "SonarLint", "None"},
+	"C#/.NET":         {"Roslyn Analyzers", "StyleCop", "SonarLint", "None"},
+	"Rust":            {"Clippy", "cargo-audit", "None"},
+	"Ruby":            {"RuboCop", "StandardRB", "None"},
+	"PHP":             {"PHP-CS-Fixer", "PHPStan", "Psalm", "None"},
+	"Elixir":          {"Credo", "Dialyxir", "None"},
+	"Other":           {"Custom", "None"},
+}
+
 // ── field definitions ─────────────────────────────────────────────────────────
 
 func defaultEnvFields() []Field {
@@ -180,9 +194,11 @@ func defaultEnvFields() []Field {
 			Value:   "None", SelIdx: 3,
 		},
 		{
-			Key: "be_linter", Label: "Linter        ", Kind: KindSelect,
-			Options: []string{"golangci-lint", "Ruff", "ESLint", "Checkstyle", "ktlint", "Clippy", "RuboCop", "PHP-CS-Fixer", "Custom", "None"},
-			Value:   "None", SelIdx: 9,
+			Key:     "be_linter",
+			Label:   "Linter        ",
+			Kind:    KindSelect,
+			Options: backendLintersByLang["Go"],
+			Value:   "None", SelIdx: len(backendLintersByLang["Go"]) - 1,
 		},
 	}
 }
@@ -439,13 +455,6 @@ func defaultAuthFields() []Field {
 			Value:   "RBAC",
 		},
 		{
-			Key: "roles", Label: "roles         ", Kind: KindMultiSelect,
-			Options: []string{
-				"admin", "superadmin", "user", "moderator",
-				"editor", "viewer", "manager", "auditor", "owner",
-			},
-		},
-		{
 			Key: "token_storage", Label: "token_storage ", Kind: KindMultiSelect,
 			Options: []string{
 				"HttpOnly cookie", "Authorization header (Bearer)",
@@ -505,7 +514,9 @@ func defaultSecurityFields() []Field {
 	}
 }
 
-func defaultJobQueueFormFields() []Field {
+func defaultJobQueueFormFields(services, dtos []string) []Field {
+	workerOpts := append([]string{"(none)"}, services...)
+	payloadOpts := append([]string{"(none)"}, dtos...)
 	return []Field{
 		{Key: "name", Label: "name          ", Kind: KindText},
 		{
@@ -524,16 +535,52 @@ func defaultJobQueueFormFields() []Field {
 			Key: "dlq", Label: "dead_letter_q ", Kind: KindSelect,
 			Options: []string{"false", "true"}, Value: "false",
 		},
+		{
+			Key: "worker_service", Label: "worker_service", Kind: KindSelect,
+			Options: workerOpts, Value: "(none)",
+		},
+		{
+			Key: "payload_dto", Label: "payload_dto   ", Kind: KindSelect,
+			Options: payloadOpts, Value: "(none)",
+		},
 	}
 }
 
-// ── beSubView type ────────────────────────────────────────────────────────────
+// defaultRoleFormFields returns form fields for a role, wiring permissions and
+// inheritable role names as KindMultiSelect dropdowns.
+func defaultRoleFormFields(permNames, roleNames []string) []Field {
+	return []Field{
+		{Key: "name", Label: "name          ", Kind: KindText},
+		{Key: "description", Label: "description   ", Kind: KindText},
+		{Key: "permissions", Label: "permissions   ", Kind: KindMultiSelect, Options: permNames},
+		{Key: "inherits", Label: "inherits      ", Kind: KindMultiSelect, Options: roleNames},
+	}
+}
+
+func defaultPermFormFields() []Field {
+	return []Field{
+		{Key: "name", Label: "name          ", Kind: KindText},
+		{Key: "description", Label: "description   ", Kind: KindText},
+	}
+}
+
+// ── beSubView / beAuthView types ──────────────────────────────────────────────
 
 type beSubView int
 
 const (
 	beViewList beSubView = iota
 	beViewForm
+)
+
+type beAuthView int
+
+const (
+	beAuthViewConfig   beAuthView = iota // flat config fields (strategy, provider, etc.)
+	beAuthViewRoleList                   // roles list
+	beAuthViewRoleForm                   // single role edit form
+	beAuthViewPermList                   // permissions list
+	beAuthViewPermForm                   // single permission edit form
 )
 
 // ── list + form sub-editor for services and comm links ───────────────────────
@@ -592,6 +639,17 @@ type BackendEditor struct {
 	jobsForm    []Field
 	jobsFormIdx int
 
+	// Auth permissions + roles sub-editors
+	authSubView     beAuthView
+	authPerms       []manifest.PermissionDef
+	authPermsIdx    int
+	authPermForm    []Field
+	authPermFormIdx int
+	authRoles       []manifest.RoleDef
+	authRolesIdx    int
+	authRoleForm    []Field
+	authRoleFormIdx int
+
 	// List editors
 	serviceEditor beListEditor
 	commEditor    beListEditor
@@ -612,7 +670,8 @@ type BackendEditor struct {
 	Events    []manifest.EventDef
 
 	// Cross-tab references (injected from model.go)
-	DomainNames []string
+	DomainNames   []string
+	availableDTOs []string
 
 	// Vim motion state
 	countBuf string
@@ -637,6 +696,11 @@ func newBackendEditor() BackendEditor {
 // SetDomainNames injects domain names from the data tab for event domain dropdowns.
 func (be *BackendEditor) SetDomainNames(names []string) {
 	be.DomainNames = names
+}
+
+// SetDTONames injects DTO names from the contracts tab for job payload dropdowns.
+func (be *BackendEditor) SetDTONames(names []string) {
+	be.availableDTOs = names
 }
 
 // withServiceNames returns a copy of fields where from/to are upgraded to
@@ -759,7 +823,8 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 			Strategy:     fieldGetMulti(be.AuthFields, "strategy"),
 			Provider:     fieldGet(be.AuthFields, "provider"),
 			AuthzModel:   fieldGet(be.AuthFields, "authz_model"),
-			Roles:        fieldGetMulti(be.AuthFields, "roles"),
+			Permissions:  be.authPerms,
+			Roles:        be.authRoles,
 			TokenStorage: fieldGetMulti(be.AuthFields, "token_storage"),
 			RefreshToken: fieldGet(be.AuthFields, "refresh_token"),
 			MFA:          fieldGet(be.AuthFields, "mfa"),
@@ -857,6 +922,7 @@ func (be BackendEditor) FromBackendPillar(bp manifest.BackendPillar) BackendEdit
 		be.EnvFields = setFieldValue(be.EnvFields, "be_linter", bp.BackendLinter)
 		if arch == "monolith" {
 			be.EnvFields = setFieldValue(be.EnvFields, "monolith_lang", bp.Language)
+			be.updateEnvMonolithOptions()
 			be.EnvFields = setFieldValue(be.EnvFields, "monolith_fw", bp.Framework)
 		}
 	}
@@ -867,7 +933,8 @@ func (be BackendEditor) FromBackendPillar(bp manifest.BackendPillar) BackendEdit
 		be.AuthFields = restoreMultiSelectValue(be.AuthFields, "strategy", bp.Auth.Strategy)
 		be.AuthFields = setFieldValue(be.AuthFields, "provider", bp.Auth.Provider)
 		be.AuthFields = setFieldValue(be.AuthFields, "authz_model", bp.Auth.AuthzModel)
-		be.AuthFields = restoreMultiSelectValue(be.AuthFields, "roles", bp.Auth.Roles)
+		be.authPerms = bp.Auth.Permissions
+		be.authRoles = bp.Auth.Roles
 		be.AuthFields = restoreMultiSelectValue(be.AuthFields, "token_storage", bp.Auth.TokenStorage)
 		be.AuthFields = setFieldValue(be.AuthFields, "refresh_token", bp.Auth.RefreshToken)
 		be.AuthFields = setFieldValue(be.AuthFields, "mfa", bp.Auth.MFA)
@@ -967,6 +1034,23 @@ func (be BackendEditor) HintLine() string {
 			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
 		}
 		return hintBar("j/k", "navigate", "a", "add job queue", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+	case beTabAuth:
+		if !be.authEnabled {
+			return hintBar("a", "configure", "h/l", "sub-tab", "b", "change arch")
+		}
+		switch be.authSubView {
+		case beAuthViewConfig:
+			return hintBar("j/k", "navigate", "a/i/Enter", "edit", "r", "roles", "p", "permissions", "D", "reset", "h/l", "sub-tab")
+		case beAuthViewPermList:
+			return hintBar("j/k", "navigate", "a", "add perm", "d", "delete", "Enter", "edit", "b", "back to config", "h/l", "sub-tab")
+		case beAuthViewPermForm:
+			return hintBar("j/k", "navigate", "i/Enter", "edit", "b/Esc", "back to list")
+		case beAuthViewRoleList:
+			return hintBar("j/k", "navigate", "a", "add role", "d", "delete", "Enter", "edit", "b", "back to config", "h/l", "sub-tab")
+		case beAuthViewRoleForm:
+			return hintBar("j/k", "navigate", "i/Enter", "edit text", "Space/Enter", "toggle perm", "b/Esc", "back to list")
+		}
+		return ""
 	case beTabSecurity:
 		if !be.secEnabled {
 			return hintBar("a", "configure", "h/l", "sub-tab", "b", "change arch")
@@ -980,8 +1064,6 @@ func (be BackendEditor) HintLine() string {
 			configEnabled = be.envEnabled
 		case beTabAPIGW:
 			configEnabled = be.apiGWEnabled
-		case beTabAuth:
-			configEnabled = be.authEnabled
 		}
 		if !configEnabled {
 			return hintBar("a", "configure", "h/l", "sub-tab", "b", "change arch")
@@ -1109,6 +1191,11 @@ func (be BackendEditor) isMultiSelectDropdown() bool {
 			return ed.form[ed.formIdx].Kind == KindMultiSelect
 		}
 	}
+	if be.authSubView == beAuthViewRoleForm {
+		if be.authRoleFormIdx < len(be.authRoleForm) {
+			return be.authRoleForm[be.authRoleFormIdx].Kind == KindMultiSelect
+		}
+	}
 	if f := be.mutableFieldPtr(); f != nil {
 		return f.Kind == KindMultiSelect
 	}
@@ -1117,6 +1204,13 @@ func (be BackendEditor) isMultiSelectDropdown() bool {
 
 // toggleMultiSelectOption toggles ddOptIdx in the active KindMultiSelect field.
 func (be *BackendEditor) toggleMultiSelectOption() {
+	if be.authSubView == beAuthViewRoleForm {
+		if be.authRoleFormIdx < len(be.authRoleForm) && be.authRoleForm[be.authRoleFormIdx].Kind == KindMultiSelect {
+			be.authRoleForm[be.authRoleFormIdx].ToggleMultiSelect(be.ddOptIdx)
+			be.authRoleForm[be.authRoleFormIdx].DDCursor = be.ddOptIdx
+		}
+		return
+	}
 	if be.serviceEditor.itemView == beListViewForm {
 		ed := &be.serviceEditor
 		if ed.formIdx < len(ed.form) && ed.form[ed.formIdx].Kind == KindMultiSelect {
@@ -1133,6 +1227,12 @@ func (be *BackendEditor) toggleMultiSelectOption() {
 
 // saveMultiSelectCursor saves the current dropdown cursor back to the field.
 func (be *BackendEditor) saveMultiSelectCursor() {
+	if be.authSubView == beAuthViewRoleForm {
+		if be.authRoleFormIdx < len(be.authRoleForm) && be.authRoleForm[be.authRoleFormIdx].Kind == KindMultiSelect {
+			be.authRoleForm[be.authRoleFormIdx].DDCursor = be.ddOptIdx
+		}
+		return
+	}
 	if be.serviceEditor.itemView == beListViewForm {
 		ed := &be.serviceEditor
 		if ed.formIdx < len(ed.form) && ed.form[ed.formIdx].Kind == KindMultiSelect {
@@ -1168,6 +1268,11 @@ func (be BackendEditor) dropdownOptions() []string {
 	if be.jobsSubView == beViewForm {
 		if be.jobsFormIdx < len(be.jobsForm) && (be.jobsForm[be.jobsFormIdx].Kind == KindSelect || be.jobsForm[be.jobsFormIdx].Kind == KindMultiSelect) {
 			return be.jobsForm[be.jobsFormIdx].Options
+		}
+	}
+	if be.authSubView == beAuthViewRoleForm {
+		if be.authRoleFormIdx < len(be.authRoleForm) && (be.authRoleForm[be.authRoleFormIdx].Kind == KindSelect || be.authRoleForm[be.authRoleFormIdx].Kind == KindMultiSelect) {
+			return be.authRoleForm[be.authRoleFormIdx].Options
 		}
 	}
 	if f := be.mutableFieldPtr(); f != nil {
@@ -1220,6 +1325,24 @@ func (be *BackendEditor) applyDropdown() bool {
 		}
 		return false
 	}
+	if be.authSubView == beAuthViewRoleForm {
+		if be.authRoleFormIdx < len(be.authRoleForm) {
+			f := &be.authRoleForm[be.authRoleFormIdx]
+			if f.Kind == KindSelect && be.ddOptIdx < len(f.Options) {
+				f.SelIdx = be.ddOptIdx
+				f.Value = f.Options[be.ddOptIdx]
+			}
+			// KindMultiSelect handled via toggleMultiSelectOption
+		}
+		return false
+	}
+	if f := be.mutableFieldPtr(); f != nil && f.Kind == KindSelect && be.ddOptIdx < len(f.Options) {
+		f.SelIdx = be.ddOptIdx
+		f.Value = f.Options[be.ddOptIdx]
+		if be.activeTab() == beTabEnv && f.Key == "monolith_lang" {
+			be.updateEnvMonolithOptions()
+		}
+	}
 	return applyTo(be.mutableFieldPtr())
 }
 
@@ -1234,6 +1357,22 @@ func (be BackendEditor) updateInsert(msg tea.Msg) (BackendEditor, tea.Cmd) {
 			return be, nil
 		case "tab":
 			be.saveInput()
+			if be.authSubView == beAuthViewPermForm {
+				n := len(be.authPermForm)
+				if n > 0 {
+					be.authPermFormIdx = (be.authPermFormIdx + 1) % n
+					be.activeField = be.authPermFormIdx
+				}
+				return be.enterAuthPermFormInsert()
+			}
+			if be.authSubView == beAuthViewRoleForm {
+				n := len(be.authRoleForm)
+				if n > 0 {
+					be.authRoleFormIdx = (be.authRoleFormIdx + 1) % n
+					be.activeField = be.authRoleFormIdx
+				}
+				return be.enterAuthRoleFormInsert()
+			}
 			if be.jobsSubView == beViewForm {
 				n := len(be.jobsForm)
 				if n > 0 {
@@ -1249,6 +1388,22 @@ func (be BackendEditor) updateInsert(msg tea.Msg) (BackendEditor, tea.Cmd) {
 			}
 		case "shift+tab":
 			be.saveInput()
+			if be.authSubView == beAuthViewPermForm {
+				n := len(be.authPermForm)
+				if n > 0 {
+					be.authPermFormIdx = (be.authPermFormIdx - 1 + n) % n
+					be.activeField = be.authPermFormIdx
+				}
+				return be.enterAuthPermFormInsert()
+			}
+			if be.authSubView == beAuthViewRoleForm {
+				n := len(be.authRoleForm)
+				if n > 0 {
+					be.authRoleFormIdx = (be.authRoleFormIdx - 1 + n) % n
+					be.activeField = be.authRoleFormIdx
+				}
+				return be.enterAuthRoleFormInsert()
+			}
 			if be.jobsSubView == beViewForm {
 				n := len(be.jobsForm)
 				if n > 0 {
@@ -1300,11 +1455,13 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 			return be.updateJobsList(key)
 		}
 		return be.updateJobsForm(key)
+	case beTabAuth:
+		return be.updateAuth(key)
 	case beTabSecurity:
 		return be.updateSecurity(key)
 	}
 
-	// Enabled guard for config-only tabs (ENV, API GW, AUTH)
+	// Enabled guard for config-only tabs (ENV, API GW)
 	k := key.String()
 	activeConfigEnabled := true
 	switch tab {
@@ -1312,8 +1469,6 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 		activeConfigEnabled = be.envEnabled
 	case beTabAPIGW:
 		activeConfigEnabled = be.apiGWEnabled
-	case beTabAuth:
-		activeConfigEnabled = be.authEnabled
 	}
 	if !activeConfigEnabled {
 		if k == "a" {
@@ -1372,10 +1527,6 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 		case beTabAPIGW:
 			be.apiGWEnabled = false
 			be.APIGWFields = defaultAPIGWFields()
-			be.activeField = 0
-		case beTabAuth:
-			be.authEnabled = false
-			be.AuthFields = defaultAuthFields()
 			be.activeField = 0
 		}
 		return be, nil
@@ -1468,6 +1619,9 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 		be.gBuf = false
 		if f := be.mutableFieldPtr(); f != nil && f.Kind == KindSelect {
 			f.CyclePrev()
+			if be.activeTab() == beTabEnv && f.Key == "monolith_lang" {
+				be.updateEnvMonolithOptions()
+			}
 		}
 	case "i", "a":
 		be.countBuf = ""
@@ -1538,7 +1692,7 @@ func (be BackendEditor) updateServiceList(key tea.KeyMsg) (BackendEditor, tea.Cm
 // isServiceFieldHidden returns true when a service form field should be hidden for the current arch.
 func (be BackendEditor) isServiceFieldHidden(key string) bool {
 	arch := be.currentArch()
-	if arch == "monolith" && (key == "language" || key == "framework") {
+	if arch == "monolith" && (key == "language" || key == "framework" || key == "service_discovery") {
 		return true
 	}
 	if arch != "hybrid" && key == "pattern_tag" {
@@ -1613,6 +1767,32 @@ func (be *BackendEditor) updateServiceFrameworkOptions(ed *beListEditor) {
 			ed.form[i].SelIdx = 0
 			ed.form[i].Value = opts[0]
 			break
+		}
+	}
+}
+
+// updateEnvMonolithOptions refreshes the monolith_fw and be_linter dropdowns
+// to match the currently selected monolith_lang.
+func (be *BackendEditor) updateEnvMonolithOptions() {
+	lang := fieldGet(be.EnvFields, "monolith_lang")
+	fwOpts, ok := backendFrameworksByLang[lang]
+	if !ok {
+		fwOpts = []string{"Other"}
+	}
+	lintOpts, ok := backendLintersByLang[lang]
+	if !ok {
+		lintOpts = []string{"Custom", "None"}
+	}
+	for i := range be.EnvFields {
+		switch be.EnvFields[i].Key {
+		case "monolith_fw":
+			be.EnvFields[i].Options = fwOpts
+			be.EnvFields[i].SelIdx = 0
+			be.EnvFields[i].Value = fwOpts[0]
+		case "be_linter":
+			be.EnvFields[i].Options = lintOpts
+			be.EnvFields[i].SelIdx = len(lintOpts) - 1
+			be.EnvFields[i].Value = lintOpts[len(lintOpts)-1]
 		}
 	}
 }
@@ -1919,7 +2099,10 @@ func (be *BackendEditor) currentEditableFields() *[]Field {
 	case beTabAPIGW:
 		return &be.APIGWFields
 	case beTabAuth:
-		return &be.AuthFields
+		if be.authSubView == beAuthViewConfig {
+			return &be.AuthFields
+		}
+		return nil
 	case beTabSecurity:
 		return &be.securityFields
 	}
@@ -2000,6 +2183,20 @@ func (be *BackendEditor) saveInput() {
 		ed := &be.eventEditor
 		if ed.formIdx < len(ed.form) && ed.form[ed.formIdx].CanEditAsText() {
 			ed.form[ed.formIdx].SaveTextInput(val)
+		}
+		return
+	}
+	// Check if we're in an auth permission form
+	if be.authSubView == beAuthViewPermForm {
+		if be.authPermFormIdx < len(be.authPermForm) && be.authPermForm[be.authPermFormIdx].Kind == KindText {
+			be.authPermForm[be.authPermFormIdx].Value = val
+		}
+		return
+	}
+	// Check if we're in an auth role form
+	if be.authSubView == beAuthViewRoleForm {
+		if be.authRoleFormIdx < len(be.authRoleForm) && be.authRoleForm[be.authRoleFormIdx].Kind == KindText {
+			be.authRoleForm[be.authRoleFormIdx].Value = val
 		}
 		return
 	}
@@ -2141,11 +2338,14 @@ func (be BackendEditor) viewSubTabs(w, h int) string {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case beTabAuth:
-		if be.authEnabled {
-			lines = append(lines, renderFormFields(w, be.AuthFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
-		} else {
-			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
+		authLines := be.viewAuth(w)
+		switch be.authSubView {
+		case beAuthViewPermList:
+			authLines = appendViewport(authLines, 2, be.authPermsIdx, h-4)
+		case beAuthViewRoleList:
+			authLines = appendViewport(authLines, 2, be.authRolesIdx, h-4)
 		}
+		lines = append(lines, authLines...)
 	}
 
 	return fillTildes(lines, h)
@@ -2190,8 +2390,8 @@ func (be BackendEditor) viewServiceEditor(w int) []string {
 	filteredActiveIdx := ed.formIdx
 	skippedBefore := 0
 	for i, f := range ed.form {
-		// For monolith: language and framework are defined at top level (ENV tab)
-		if arch == "monolith" && (f.Key == "language" || f.Key == "framework") {
+		// For monolith: language, framework, and service_discovery are defined at top level (ENV tab)
+		if arch == "monolith" && (f.Key == "language" || f.Key == "framework" || f.Key == "service_discovery") {
 			if i < ed.formIdx {
 				skippedBefore++
 			}
@@ -2361,7 +2561,7 @@ func (be BackendEditor) updateJobsList(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 	case "a":
 		be.jobQueues = append(be.jobQueues, manifest.JobQueueDef{})
 		be.jobsIdx = len(be.jobQueues) - 1
-		be.jobsForm = defaultJobQueueFormFields()
+		be.jobsForm = defaultJobQueueFormFields(be.ServiceNames(), be.availableDTOs)
 		be.jobsFormIdx = 0
 		be.jobsSubView = beViewForm
 		be.activeField = 0
@@ -2375,13 +2575,15 @@ func (be BackendEditor) updateJobsList(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 	case "enter":
 		if n > 0 {
 			jq := be.jobQueues[be.jobsIdx]
-			be.jobsForm = defaultJobQueueFormFields()
+			be.jobsForm = defaultJobQueueFormFields(be.ServiceNames(), be.availableDTOs)
 			be.jobsForm = setFieldValue(be.jobsForm, "name", jq.Name)
 			be.jobsForm = setFieldValue(be.jobsForm, "technology", jq.Technology)
 			be.jobsForm = setFieldValue(be.jobsForm, "concurrency", jq.Concurrency)
 			be.jobsForm = setFieldValue(be.jobsForm, "max_retries", jq.MaxRetries)
 			be.jobsForm = setFieldValue(be.jobsForm, "retry_policy", jq.RetryPolicy)
 			be.jobsForm = setFieldValue(be.jobsForm, "dlq", jq.DLQ)
+			be.jobsForm = setFieldValue(be.jobsForm, "worker_service", jq.WorkerService)
+			be.jobsForm = setFieldValue(be.jobsForm, "payload_dto", jq.PayloadDTO)
 			be.jobsFormIdx = 0
 			be.jobsSubView = beViewForm
 			be.activeField = 0
@@ -2468,6 +2670,510 @@ func (be *BackendEditor) saveJobsForm() {
 	jq.MaxRetries = fieldGet(be.jobsForm, "max_retries")
 	jq.RetryPolicy = fieldGet(be.jobsForm, "retry_policy")
 	jq.DLQ = fieldGet(be.jobsForm, "dlq")
+	ws := fieldGet(be.jobsForm, "worker_service")
+	if ws != "(none)" {
+		jq.WorkerService = ws
+	} else {
+		jq.WorkerService = ""
+	}
+	pd := fieldGet(be.jobsForm, "payload_dto")
+	if pd != "(none)" {
+		jq.PayloadDTO = pd
+	} else {
+		jq.PayloadDTO = ""
+	}
+}
+
+// ── Auth updates ──────────────────────────────────────────────────────────────
+
+func (be BackendEditor) updateAuth(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
+	k := key.String()
+	if !be.authEnabled {
+		switch k {
+		case "a":
+			be.authEnabled = true
+			be.activeField = 0
+		case "h", "left":
+			if be.activeTabIdx > 0 {
+				be.activeTabIdx--
+			}
+		case "l", "right":
+			if be.activeTabIdx < len(be.activeTabs())-1 {
+				be.activeTabIdx++
+			}
+		case "b":
+			be.ArchConfirmed = false
+			be.dropdownOpen = false
+			be.dropdownIdx = be.ArchIdx
+			be.activeTabIdx = 0
+			be.activeField = 0
+		}
+		return be, nil
+	}
+	switch be.authSubView {
+	case beAuthViewConfig:
+		return be.updateAuthConfig(key)
+	case beAuthViewRoleList:
+		return be.updateAuthRoleList(key)
+	case beAuthViewRoleForm:
+		return be.updateAuthRoleForm(key)
+	case beAuthViewPermList:
+		return be.updateAuthPermList(key)
+	case beAuthViewPermForm:
+		return be.updateAuthPermForm(key)
+	}
+	return be, nil
+}
+
+func (be BackendEditor) updateAuthConfig(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
+	k := key.String()
+	n := len(be.AuthFields)
+
+	if len(k) == 1 && k[0] >= '1' && k[0] <= '9' {
+		be.countBuf += k
+		be.gBuf = false
+		return be, nil
+	}
+	if k == "0" && be.countBuf != "" {
+		be.countBuf += "0"
+		be.gBuf = false
+		return be, nil
+	}
+
+	switch k {
+	case "j", "down":
+		count := parseVimCount(be.countBuf)
+		be.countBuf = ""
+		be.gBuf = false
+		for i := 0; i < count; i++ {
+			if be.activeField < n-1 {
+				be.activeField++
+			}
+		}
+	case "k", "up":
+		count := parseVimCount(be.countBuf)
+		be.countBuf = ""
+		be.gBuf = false
+		for i := 0; i < count; i++ {
+			if be.activeField > 0 {
+				be.activeField--
+			}
+		}
+	case "g":
+		if be.gBuf {
+			be.activeField = 0
+			be.gBuf = false
+		} else {
+			be.gBuf = true
+		}
+		be.countBuf = ""
+	case "G":
+		be.countBuf = ""
+		be.gBuf = false
+		if n > 0 {
+			be.activeField = n - 1
+		}
+	case "h", "left":
+		be.countBuf = ""
+		be.gBuf = false
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+		}
+	case "l", "right":
+		be.countBuf = ""
+		be.gBuf = false
+		if be.activeTabIdx < len(be.activeTabs())-1 {
+			be.activeTabIdx++
+		}
+	case "b":
+		be.countBuf = ""
+		be.gBuf = false
+		be.ArchConfirmed = false
+		be.dropdownOpen = false
+		be.dropdownIdx = be.ArchIdx
+		be.activeTabIdx = 0
+		be.activeField = 0
+	case "r":
+		be.countBuf = ""
+		be.gBuf = false
+		be.authSubView = beAuthViewRoleList
+		be.activeField = 0
+	case "p":
+		be.countBuf = ""
+		be.gBuf = false
+		be.authSubView = beAuthViewPermList
+		be.activeField = 0
+	case "D":
+		be.countBuf = ""
+		be.gBuf = false
+		be.authEnabled = false
+		be.AuthFields = defaultAuthFields()
+		be.authPerms = nil
+		be.authPermsIdx = 0
+		be.authRoles = nil
+		be.authRolesIdx = 0
+		be.authSubView = beAuthViewConfig
+		be.activeField = 0
+	case "enter", " ":
+		be.countBuf = ""
+		be.gBuf = false
+		if be.activeField < n {
+			f := &be.AuthFields[be.activeField]
+			if f.Kind == KindSelect || f.Kind == KindMultiSelect {
+				be.ddOpen = true
+				if f.Kind == KindSelect {
+					be.ddOptIdx = f.SelIdx
+				} else {
+					be.ddOptIdx = f.DDCursor
+				}
+			} else {
+				return be.tryEnterInsert()
+			}
+		}
+	case "H", "shift+left":
+		be.countBuf = ""
+		be.gBuf = false
+		if be.activeField < n {
+			f := &be.AuthFields[be.activeField]
+			if f.Kind == KindSelect {
+				f.CyclePrev()
+			}
+		}
+	case "i", "a":
+		be.countBuf = ""
+		be.gBuf = false
+		return be.tryEnterInsert()
+	default:
+		be.countBuf = ""
+		be.gBuf = false
+	}
+	return be, nil
+}
+
+func (be BackendEditor) updateAuthRoleList(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
+	n := len(be.authRoles)
+	switch key.String() {
+	case "j", "down":
+		if n > 0 && be.authRolesIdx < n-1 {
+			be.authRolesIdx++
+		}
+	case "k", "up":
+		if be.authRolesIdx > 0 {
+			be.authRolesIdx--
+		}
+	case "a":
+		be.authRoles = append(be.authRoles, manifest.RoleDef{})
+		be.authRolesIdx = len(be.authRoles) - 1
+		be.authRoleForm = defaultRoleFormFields(be.permissionNames(), be.roleNamesExcept(be.authRolesIdx))
+		be.authRoleFormIdx = 0
+		be.authSubView = beAuthViewRoleForm
+		be.activeField = 0
+	case "d":
+		if n > 0 {
+			be.authRoles = append(be.authRoles[:be.authRolesIdx], be.authRoles[be.authRolesIdx+1:]...)
+			if be.authRolesIdx > 0 && be.authRolesIdx >= len(be.authRoles) {
+				be.authRolesIdx = len(be.authRoles) - 1
+			}
+		}
+	case "enter", "i":
+		if n > 0 {
+			r := be.authRoles[be.authRolesIdx]
+			be.authRoleForm = defaultRoleFormFields(be.permissionNames(), be.roleNamesExcept(be.authRolesIdx))
+			be.authRoleForm = setFieldValue(be.authRoleForm, "name", r.Name)
+			be.authRoleForm = setFieldValue(be.authRoleForm, "description", r.Description)
+			be.authRoleForm = restoreMultiSelectValue(be.authRoleForm, "permissions", strings.Join(r.Permissions, ", "))
+			be.authRoleForm = restoreMultiSelectValue(be.authRoleForm, "inherits", strings.Join(r.Inherits, ", "))
+			be.authRoleFormIdx = 0
+			be.authSubView = beAuthViewRoleForm
+			be.activeField = 0
+		}
+	case "b", "esc":
+		be.authSubView = beAuthViewConfig
+		be.activeField = 0
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+		}
+	case "l", "right":
+		if be.activeTabIdx < len(be.activeTabs())-1 {
+			be.activeTabIdx++
+		}
+	}
+	return be, nil
+}
+
+func (be BackendEditor) updateAuthRoleForm(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
+	n := len(be.authRoleForm)
+	switch key.String() {
+	case "j", "down":
+		if be.authRoleFormIdx < n-1 {
+			be.authRoleFormIdx++
+		}
+		be.activeField = be.authRoleFormIdx
+	case "k", "up":
+		if be.authRoleFormIdx > 0 {
+			be.authRoleFormIdx--
+		}
+		be.activeField = be.authRoleFormIdx
+	case "enter", " ":
+		if be.authRoleFormIdx < n {
+			f := &be.authRoleForm[be.authRoleFormIdx]
+			if f.Kind == KindMultiSelect {
+				be.ddOpen = true
+				be.ddOptIdx = f.DDCursor
+			} else if f.Kind == KindText {
+				return be.enterAuthRoleFormInsert()
+			}
+		}
+	case "i", "a":
+		if be.authRoleFormIdx < n && be.authRoleForm[be.authRoleFormIdx].Kind == KindText {
+			return be.enterAuthRoleFormInsert()
+		}
+	case "b", "esc":
+		be.saveAuthRoleForm()
+		be.authSubView = beAuthViewRoleList
+	}
+	return be, nil
+}
+
+func (be BackendEditor) enterAuthRoleFormInsert() (BackendEditor, tea.Cmd) {
+	n := len(be.authRoleForm)
+	for i := 0; i < n; i++ {
+		f := be.authRoleForm[be.authRoleFormIdx]
+		if f.Kind == KindText {
+			be.internalMode = beInsert
+			be.formInput.SetValue(f.Value)
+			be.formInput.Width = be.width - 22
+			be.formInput.CursorEnd()
+			return be, be.formInput.Focus()
+		}
+		be.authRoleFormIdx = (be.authRoleFormIdx + 1) % n
+		be.activeField = be.authRoleFormIdx
+	}
+	return be, nil
+}
+
+func (be *BackendEditor) saveAuthRoleForm() {
+	if be.authRolesIdx >= len(be.authRoles) {
+		return
+	}
+	r := &be.authRoles[be.authRolesIdx]
+	r.Name = fieldGet(be.authRoleForm, "name")
+	r.Description = fieldGet(be.authRoleForm, "description")
+	r.Permissions = splitComma(fieldGetMulti(be.authRoleForm, "permissions"))
+	r.Inherits = splitComma(fieldGetMulti(be.authRoleForm, "inherits"))
+}
+
+func (be BackendEditor) updateAuthPermList(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
+	n := len(be.authPerms)
+	switch key.String() {
+	case "j", "down":
+		if n > 0 && be.authPermsIdx < n-1 {
+			be.authPermsIdx++
+		}
+	case "k", "up":
+		if be.authPermsIdx > 0 {
+			be.authPermsIdx--
+		}
+	case "a":
+		be.authPerms = append(be.authPerms, manifest.PermissionDef{})
+		be.authPermsIdx = len(be.authPerms) - 1
+		be.authPermForm = defaultPermFormFields()
+		be.authPermFormIdx = 0
+		be.authSubView = beAuthViewPermForm
+		be.activeField = 0
+	case "d":
+		if n > 0 {
+			be.authPerms = append(be.authPerms[:be.authPermsIdx], be.authPerms[be.authPermsIdx+1:]...)
+			if be.authPermsIdx > 0 && be.authPermsIdx >= len(be.authPerms) {
+				be.authPermsIdx = len(be.authPerms) - 1
+			}
+		}
+	case "enter", "i":
+		if n > 0 {
+			p := be.authPerms[be.authPermsIdx]
+			be.authPermForm = defaultPermFormFields()
+			be.authPermForm = setFieldValue(be.authPermForm, "name", p.Name)
+			be.authPermForm = setFieldValue(be.authPermForm, "description", p.Description)
+			be.authPermFormIdx = 0
+			be.authSubView = beAuthViewPermForm
+			be.activeField = 0
+		}
+	case "b", "esc":
+		be.authSubView = beAuthViewConfig
+		be.activeField = 0
+	case "h", "left":
+		if be.activeTabIdx > 0 {
+			be.activeTabIdx--
+		}
+	case "l", "right":
+		if be.activeTabIdx < len(be.activeTabs())-1 {
+			be.activeTabIdx++
+		}
+	}
+	return be, nil
+}
+
+func (be BackendEditor) updateAuthPermForm(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
+	n := len(be.authPermForm)
+	switch key.String() {
+	case "j", "down":
+		if be.authPermFormIdx < n-1 {
+			be.authPermFormIdx++
+		}
+		be.activeField = be.authPermFormIdx
+	case "k", "up":
+		if be.authPermFormIdx > 0 {
+			be.authPermFormIdx--
+		}
+		be.activeField = be.authPermFormIdx
+	case "enter", "i", "a":
+		if be.authPermFormIdx < n && be.authPermForm[be.authPermFormIdx].Kind == KindText {
+			return be.enterAuthPermFormInsert()
+		}
+	case "b", "esc":
+		be.saveAuthPermForm()
+		be.authSubView = beAuthViewPermList
+	}
+	return be, nil
+}
+
+func (be BackendEditor) enterAuthPermFormInsert() (BackendEditor, tea.Cmd) {
+	if be.authPermFormIdx < len(be.authPermForm) {
+		f := be.authPermForm[be.authPermFormIdx]
+		if f.Kind == KindText {
+			be.internalMode = beInsert
+			be.formInput.SetValue(f.Value)
+			be.formInput.Width = be.width - 22
+			be.formInput.CursorEnd()
+			return be, be.formInput.Focus()
+		}
+	}
+	return be, nil
+}
+
+func (be *BackendEditor) saveAuthPermForm() {
+	if be.authPermsIdx >= len(be.authPerms) {
+		return
+	}
+	p := &be.authPerms[be.authPermsIdx]
+	p.Name = fieldGet(be.authPermForm, "name")
+	p.Description = fieldGet(be.authPermForm, "description")
+}
+
+// permissionNames returns names of all defined permissions.
+func (be BackendEditor) permissionNames() []string {
+	names := make([]string, 0, len(be.authPerms))
+	for _, p := range be.authPerms {
+		if p.Name != "" {
+			names = append(names, p.Name)
+		}
+	}
+	return names
+}
+
+// roleNamesExcept returns names of all roles except the one at excludeIdx.
+func (be BackendEditor) roleNamesExcept(excludeIdx int) []string {
+	names := make([]string, 0, len(be.authRoles))
+	for i, r := range be.authRoles {
+		if i != excludeIdx && r.Name != "" {
+			names = append(names, r.Name)
+		}
+	}
+	return names
+}
+
+// splitComma splits a comma-separated string into a trimmed slice, ignoring empty parts.
+func splitComma(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// viewAuth renders the AUTH tab content.
+func (be BackendEditor) viewAuth(w int) []string {
+	if !be.authEnabled {
+		return []string{StyleSectionDesc.Render("  (not configured — press 'a' to configure)")}
+	}
+	switch be.authSubView {
+	case beAuthViewConfig:
+		lines := renderFormFields(w, be.AuthFields, be.activeField, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)
+		permCount := fmt.Sprintf("%d", len(be.authPerms))
+		roleCount := fmt.Sprintf("%d", len(be.authRoles))
+		lines = append(lines,
+			"",
+			StyleSectionDesc.Render("  # Permissions ("+permCount+" defined) — press 'p' to manage"),
+			StyleSectionDesc.Render("  # Roles ("+roleCount+" defined) — press 'r' to manage"),
+		)
+		return lines
+	case beAuthViewPermList:
+		var lines []string
+		lines = append(lines, StyleSectionDesc.Render("  # Permissions — a: add  d: delete  Enter: edit  b: back"), "")
+		if len(be.authPerms) == 0 {
+			lines = append(lines, StyleSectionDesc.Render("  (no permissions yet — press 'a' to add)"))
+		} else {
+			for i, p := range be.authPerms {
+				name := p.Name
+				if name == "" {
+					name = fmt.Sprintf("(perm #%d)", i+1)
+				}
+				lines = append(lines, renderListItem(w, i == be.authPermsIdx, "  ▶ ", name, p.Description))
+			}
+		}
+		return lines
+	case beAuthViewPermForm:
+		name := fieldGet(be.authPermForm, "name")
+		if name == "" {
+			name = "(new permission)"
+		}
+		var lines []string
+		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
+		lines = append(lines, renderFormFields(w, be.authPermForm, be.authPermFormIdx, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
+		return lines
+	case beAuthViewRoleList:
+		var lines []string
+		lines = append(lines, StyleSectionDesc.Render("  # Roles — a: add  d: delete  Enter: edit  b: back"), "")
+		if len(be.authRoles) == 0 {
+			lines = append(lines, StyleSectionDesc.Render("  (no roles yet — press 'a' to add)"))
+		} else {
+			for i, r := range be.authRoles {
+				name := r.Name
+				if name == "" {
+					name = fmt.Sprintf("(role #%d)", i+1)
+				}
+				detail := ""
+				if len(r.Permissions) > 0 {
+					detail = strings.Join(r.Permissions[:min(3, len(r.Permissions))], ", ")
+					if len(r.Permissions) > 3 {
+						detail += "…"
+					}
+				}
+				lines = append(lines, renderListItem(w, i == be.authRolesIdx, "  ▶ ", name, detail))
+			}
+		}
+		return lines
+	case beAuthViewRoleForm:
+		name := fieldGet(be.authRoleForm, "name")
+		if name == "" {
+			name = "(new role)"
+		}
+		var lines []string
+		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
+		lines = append(lines, renderFormFields(w, be.authRoleForm, be.authRoleFormIdx, be.internalMode == beInsert, be.formInput, be.ddOpen, be.ddOptIdx)...)
+		return lines
+	}
+	return nil
 }
 
 // ── Security updates ──────────────────────────────────────────────────────────
@@ -2623,9 +3329,21 @@ func (be BackendEditor) viewJobs(w int) []string {
 	return lines
 }
 
-// AuthRoleOptions returns a list of common auth roles for use in frontend page forms.
-// Based on the authz_model configured in auth settings.
+// AuthRoleOptions returns role names for use in frontend page forms.
+// Returns names from the structured roles list when defined; falls back to
+// authz_model-based defaults otherwise.
 func (be BackendEditor) AuthRoleOptions() []string {
+	if len(be.authRoles) > 0 {
+		names := make([]string, 0, len(be.authRoles))
+		for _, r := range be.authRoles {
+			if r.Name != "" {
+				names = append(names, r.Name)
+			}
+		}
+		if len(names) > 0 {
+			return names
+		}
+	}
 	model := fieldGet(be.AuthFields, "authz_model")
 	switch model {
 	case "RBAC":

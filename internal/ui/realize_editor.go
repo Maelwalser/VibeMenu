@@ -124,6 +124,11 @@ func (r RealizeEditor) HintLine() string {
 // ── Update ────────────────────────────────────────────────────────────────────
 
 func (r RealizeEditor) Update(msg tea.Msg) (RealizeEditor, tea.Cmd) {
+	if wsz, ok := msg.(tea.WindowSizeMsg); ok {
+		r.width = wsz.Width
+		r.formInput.Width = wsz.Width - 22
+		return r, nil
+	}
 	if r.mode == realizeInsert {
 		return r.updateInsert(msg)
 	}
@@ -259,6 +264,7 @@ var (
 
 func (r RealizeEditor) View(w, h int) string {
 	r.width = w
+	r.formInput.Width = w - 22
 	var lines []string
 	lines = append(lines,
 		StyleSectionDesc.Render("  # Realization — configure output directory, app name, and agent options"),

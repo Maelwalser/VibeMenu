@@ -16,6 +16,9 @@ var defaultTierForKind = map[dag.TaskKind]string{
 	dag.TaskKindDataSchemas:    "claude-sonnet-4-6",
 	dag.TaskKindDataMigrations: "claude-haiku-4-5-20251001", // pure SQL, no reasoning needed
 
+	// Plan task: architectural reasoning about interfaces and dependency versions.
+	dag.TaskKindServicePlan: "claude-sonnet-4-6",
+
 	// Service layers: each is a focused unit; Haiku handles repetitive patterns,
 	// Sonnet handles logic and integration complexity.
 	dag.TaskKindServiceRepository: "claude-haiku-4-5-20251001", // repetitive CRUD boilerplate

@@ -103,8 +103,16 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 			continue
 		}
 
-		// Write to a task-scoped temp directory.
-		tmpDir := filepath.Join(r.writer.BaseDir(), ".tmp", r.task.ID)
+		// Write to a temp directory. Service-chain tasks (plan, repository, service,
+		// handler, bootstrap) share a single directory so each layer can see the
+		// go.mod and interfaces produced by the plan task when go build runs.
+		// Non-service tasks keep their own isolated temp directory.
+		var tmpDir string
+		if slug, ok := serviceSlug(r.task.ID); ok {
+			tmpDir = filepath.Join(r.writer.BaseDir(), ".tmp", "svc."+slug)
+		} else {
+			tmpDir = filepath.Join(r.writer.BaseDir(), ".tmp", r.task.ID)
+		}
 		if err := r.writer.WriteAllTo(tmpDir, result.Files); err != nil {
 			return fmt.Errorf("task %s: write to temp dir: %w", r.task.ID, err)
 		}
@@ -127,8 +135,13 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 			if err := r.writer.Commit(tmpDir, result.Files); err != nil {
 				return fmt.Errorf("task %s: commit files: %w", r.task.ID, err)
 			}
-			if err := os.RemoveAll(tmpDir); err != nil {
-				r.log("[%s] warning: failed to remove temp dir %s: %v", r.task.ID, tmpDir, err)
+			// Keep the shared service temp dir alive until the bootstrap task
+			// (last in chain) so each layer's files accumulate for go build.
+			_, isSvcTask := serviceSlug(r.task.ID)
+			if !isSvcTask || isBootstrapTask(r.task.ID) {
+				if err := os.RemoveAll(tmpDir); err != nil {
+					r.log("[%s] warning: failed to remove temp dir %s: %v", r.task.ID, tmpDir, err)
+				}
 			}
 			// Publish generated files to shared memory so downstream agents can
 			// reference the types, schemas, and interfaces this task produced.
@@ -155,7 +168,10 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 						if err := r.writer.Commit(tmpDir, fixedFiles); err != nil {
 							return fmt.Errorf("task %s: commit fixed files: %w", r.task.ID, err)
 						}
-						_ = os.RemoveAll(tmpDir)
+						_, isSvcTask := serviceSlug(r.task.ID)
+						if !isSvcTask || isBootstrapTask(r.task.ID) {
+							_ = os.RemoveAll(tmpDir)
+						}
 						r.memory.Record(r.task, fixedFiles)
 						if err := r.state.MarkCompleted(r.task.ID); err != nil {
 							r.log("[%s] warning: failed to persist progress: %v", r.task.ID, err)
@@ -192,6 +208,22 @@ func (r *TaskRunner) agentForAttempt(attempt int) agent.Agent {
 		r.log("[%s] escalating model to %s for attempt %d", r.task.ID, model, attempt)
 	}
 	return agent.NewClaudeAgent(model, defaultMaxTokens, r.verbose)
+}
+
+// serviceSlug extracts the service slug from a task ID of the form "svc.<slug>.<layer>".
+// Returns ("", false) for tasks that are not part of a service chain.
+func serviceSlug(taskID string) (string, bool) {
+	parts := strings.SplitN(taskID, ".", 3)
+	if len(parts) == 3 && parts[0] == "svc" {
+		return parts[1], true
+	}
+	return "", false
+}
+
+// isBootstrapTask reports whether the task is the final layer in a service chain.
+// Only the bootstrap task should clean up the shared service temp directory.
+func isBootstrapTask(taskID string) bool {
+	return strings.HasSuffix(taskID, ".bootstrap")
 }
 
 // isRateLimitError reports whether err is an API 429 rate-limit response.

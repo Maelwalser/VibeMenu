@@ -49,11 +49,13 @@ func serviceIDs(m *manifest.Manifest) []string {
 	}
 }
 
-// serviceAllLayerIDs returns all four layer task IDs for a service.
+// serviceAllLayerIDs returns all task IDs for a service (plan + deps + four layers).
 // Used by crosscut tasks that need to depend on every layer.
 func serviceAllLayerIDs(name string) []string {
 	slug := svcSlug(name)
 	return []string{
+		"svc." + slug + ".plan",
+		"svc." + slug + ".deps",
 		"svc." + slug + ".repository",
 		"svc." + slug + ".service",
 		"svc." + slug + ".handler",
@@ -62,6 +64,8 @@ func serviceAllLayerIDs(name string) []string {
 }
 
 func svcBootstrapID(name string) string { return "svc." + svcSlug(name) + ".bootstrap" }
+func svcPlanID(name string) string      { return "svc." + svcSlug(name) + ".plan" }
+func svcDepsID(name string) string      { return "svc." + svcSlug(name) + ".deps" }
 func svcSlug(name string) string {
 	return strings.ToLower(strings.ReplaceAll(name, " ", "-"))
 }
@@ -195,18 +199,57 @@ func (b *Builder) addServiceTaskChain(m *manifest.Manifest, svc *manifest.Servic
 	svcCopy := *svc
 	links := commLinksFor(svc.Name, m.Backend.CommLinks)
 
+	planID := svcPlanID(slug)
+	depsID := svcDepsID(slug)
 	repoID := "svc." + slug + ".repository"
 	svcID := "svc." + slug + ".service"
 	handlerID := "svc." + slug + ".handler"
 	bootID := "svc." + slug + ".bootstrap"
 
+	// Layer 0a — plan: project skeleton (go.mod with direct deps + repository interfaces).
+	// The LLM lists only direct dependencies; it does NOT pin transitive packages.
+	// Runs before all implementation layers so every downstream agent
+	// has a stable contract to implement against.
+	add(d, &Task{
+		ID:           planID,
+		Kind:         TaskKindServicePlan,
+		Label:        fmt.Sprintf("%s — project skeleton (interfaces + go.mod)", svc.Name),
+		Dependencies: dataDeps,
+		Payload: TaskPayload{
+			ModulePath:  modPath,
+			ArchPattern: m.Backend.ArchPattern,
+			EnvConfig:   m.Backend.Env,
+			Service:     &svcCopy,
+			Domains:     m.Data.Domains,
+			Databases:   m.Data.Databases,
+			Auth:        &m.Backend.Auth,
+		},
+	})
+
+	// Layer 0b — deps: dependency resolution (no LLM).
+	// Runs go mod tidy / npm install / pip-compile on the plan task's
+	// dependency manifest to lock all transitive versions using the live
+	// package registry. Committed go.mod+go.sum become the canonical module
+	// graph for every subsequent layer.
+	add(d, &Task{
+		ID:           depsID,
+		Kind:         TaskKindDependencyResolution,
+		Label:        fmt.Sprintf("%s — resolve & lock dependencies", svc.Name),
+		Dependencies: []string{planID},
+		Payload: TaskPayload{
+			ModulePath:  modPath,
+			ArchPattern: m.Backend.ArchPattern,
+			Service:     &svcCopy,
+		},
+	})
+
 	// Layer 1 — repository: data-access interfaces + DB implementations.
-	// Small: ~200–400 lines of Go. Depends on domain types from data.schemas.
+	// Small: ~200–400 lines of Go. Depends on resolved module graph from deps.
 	add(d, &Task{
 		ID:           repoID,
 		Kind:         TaskKindServiceRepository,
 		Label:        fmt.Sprintf("%s — repository layer", svc.Name),
-		Dependencies: dataDeps,
+		Dependencies: []string{depsID},
 		Payload: TaskPayload{
 			ModulePath:  modPath,
 			ArchPattern: m.Backend.ArchPattern,

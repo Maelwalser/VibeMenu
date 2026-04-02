@@ -65,7 +65,9 @@ func (r *Registry) ForTask(task *dag.Task) Verifier {
 // taskLanguage extracts the primary language from a task payload.
 func taskLanguage(task *dag.Task) string {
 	switch task.Kind {
-	case dag.TaskKindServiceRepository,
+	case dag.TaskKindServicePlan,
+		dag.TaskKindDependencyResolution,
+		dag.TaskKindServiceRepository,
 		dag.TaskKindServiceLogic,
 		dag.TaskKindServiceHandler,
 		dag.TaskKindServiceBootstrap:

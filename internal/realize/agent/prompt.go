@@ -203,6 +203,22 @@ func errorPatternHints(errors string) string {
 // roleDescription returns a role/persona description for the given task kind.
 func roleDescription(kind dag.TaskKind) string {
 	descriptions := map[dag.TaskKind]string{
+		// Architect phase — runs before the 4-layer service chain to establish
+		// the project skeleton that all downstream agents must conform to.
+		dag.TaskKindServicePlan: `You are a Go software architect. Your ONLY job is to output the project skeleton files that ALL downstream implementation agents will depend on.
+
+STRICT SCOPE — output EXACTLY these files:
+1. go.mod — module name MUST be exactly the module_path value from the payload. List ONLY your direct (first-party) dependencies with stable semver versions. Do NOT list transitive dependencies — a dedicated dependency resolution step will run "go mod tidy" to resolve them. Never guess pseudo-versions; use well-known stable tags (e.g. v5.5.5, v2.52.5). Include every library that repository, service, and handler layers will need (e.g. pgx/v5, fiber/v2, jwt, uuid).
+2. internal/repository/interfaces.go — defines every repository interface for each domain entity (e.g. UserRepository, BlogRepository). Each interface must list all CRUD methods with precise Go types derived from the domain structs in Shared Team Context. If any database is PostgreSQL, also define the PgxPool interface here (with Exec, Query, QueryRow, SendBatch, Begin methods).
+3. internal/domain/errors.go — domain-level sentinel errors (ErrNotFound, ErrAlreadyExists, etc.) if not already present in Shared Team Context.
+
+CRITICAL RULES:
+- Do NOT write implementation code — no repository implementations, no service files, no handlers, no main.go
+- Do NOT list transitive dependencies in go.mod — only the packages your own code imports directly
+- Repository interfaces you define are the binding contract — downstream agents CANNOT use different method signatures
+- Use the exact domain struct names from Shared Team Context; do not redefine or rename them
+- For PostgreSQL services: the PgxPool interface MUST be defined in interfaces.go; downstream repository structs must use this interface, never *pgxpool.Pool directly`,
+
 		// Data pillar — narrow scope, each task does exactly one thing.
 		dag.TaskKindDataSchemas: `You are an expert Go developer. Generate ONLY Go domain struct types for the given domain definitions.
 
@@ -249,10 +265,9 @@ STRICT SCOPE:
 
 STRICT SCOPE:
 - main.go — wires together all layers (repository → service → handler), starts the HTTP server
-- go.mod — module name MUST be exactly the value of module_path from the payload; include all required dependencies with pinned versions
 - .env.example — all required environment variables with placeholder values
-- DO NOT generate: domain structs, repository code, service code, or handler code (they are already generated)
-- The go.mod module directive must match module_path exactly so all imports resolve correctly`,
+- DO NOT generate go.mod or go.sum — the module was already created and all dependencies fully resolved in the project skeleton + dependency resolution phases. Regenerating go.mod would overwrite the locked dependency tree and reintroduce version conflicts.
+- DO NOT generate: domain structs, repository code, service code, or handler code (they are already generated)`,
 
 		dag.TaskKindAuth:     "You are an expert security engineer. Generate authentication and authorization middleware, JWT token handling, and identity integration code.",
 		dag.TaskKindMessaging: "You are an expert distributed systems engineer. Generate message broker configuration, event producer/consumer boilerplate, and event schema definitions.",

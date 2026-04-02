@@ -12,6 +12,8 @@ const (
 	// Service tasks are split into four focused layers so each agent call
 	// produces a small, independently-verifiable unit of code rather than
 	// an entire multi-thousand-line codebase in one shot.
+	TaskKindServicePlan             TaskKind = "backend.service.plan"       // architect phase: interfaces + go.mod skeleton
+	TaskKindDependencyResolution    TaskKind = "backend.service.deps"       // resolve + lock all dependencies (no LLM)
 	TaskKindServiceRepository TaskKind = "backend.service.repository" // data-access layer
 	TaskKindServiceLogic      TaskKind = "backend.service.logic"      // business logic layer
 	TaskKindServiceHandler    TaskKind = "backend.service.handler"    // HTTP handlers + routing

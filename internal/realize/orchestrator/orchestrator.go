@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/sync/errgroup"
@@ -12,6 +13,7 @@ import (
 	"github.com/vibe-mvp/internal/manifest"
 	"github.com/vibe-mvp/internal/realize/agent"
 	"github.com/vibe-mvp/internal/realize/dag"
+	"github.com/vibe-mvp/internal/realize/deps"
 	"github.com/vibe-mvp/internal/realize/memory"
 	"github.com/vibe-mvp/internal/realize/output"
 	"github.com/vibe-mvp/internal/realize/skills"
@@ -166,17 +168,25 @@ func (o *Orchestrator) runWave(
 
 			o.log("[%s] starting: %s", task.ID, task.Label)
 
-			// Resolve per-section agent if a provider assignment exists.
-			a := resolveAgent(task.ID, providers, defaultAgent, o.cfg.Verbose)
-
-			// When using the default Claude agent, select a model tier based on
-			// task kind (Haiku/Sonnet/Opus) and enable escalation on retries.
-			// Per-section manifest overrides bypass tiering entirely.
-			var baseModel string
-			if a == defaultAgent {
-				baseModel = tierForKind(task.Kind)
-				// Rebuild the default agent with the tier-appropriate model.
-				a = agent.NewClaudeAgent(baseModel, defaultMaxTokens, o.cfg.Verbose)
+			// Dependency resolution tasks run a package manager directly — no LLM.
+			// All other tasks resolve a provider (Claude / OpenAI / etc.) and apply
+			// model tiering for the default Claude path.
+			var (
+				a         agent.Agent
+				baseModel string
+			)
+			if task.Kind == dag.TaskKindDependencyResolution {
+				var svcTmpDir string
+				if slug, ok := serviceSlug(task.ID); ok {
+					svcTmpDir = filepath.Join(writer.BaseDir(), ".tmp", "svc."+slug)
+				}
+				a = deps.New(svcTmpDir, o.cfg.Verbose)
+			} else {
+				a = resolveAgent(task.ID, providers, defaultAgent, o.cfg.Verbose)
+				if a == defaultAgent {
+					baseModel = tierForKind(task.Kind)
+					a = agent.NewClaudeAgent(baseModel, defaultMaxTokens, o.cfg.Verbose)
+				}
 			}
 
 			runner := &TaskRunner{
@@ -241,6 +251,9 @@ func providerFor(taskID string, providers manifest.ProviderAssignments) (manifes
 // For manifest-configured providers it shows the provider name/tier; for
 // default-agent tasks it shows the tier-selected model.
 func describeProvider(taskID string, providers manifest.ProviderAssignments, kind dag.TaskKind) string {
+	if kind == dag.TaskKindDependencyResolution {
+		return "(package manager — no LLM)"
+	}
 	pa, ok := providerFor(taskID, providers)
 	if !ok || pa.Credential == "" {
 		return tierForKind(kind)

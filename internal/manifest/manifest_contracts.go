@@ -54,6 +54,8 @@ type ExternalAPIDef struct {
 	WebhookEndpoint string `json:"webhook_endpoint,omitempty"`
 	FailureStrategy string `json:"failure_strategy"`
 	BaseURL         string `json:"base_url,omitempty"`
+	RequestDTO      string `json:"request_dto,omitempty"`
+	ResponseDTO     string `json:"response_dto,omitempty"`
 }
 
 // ContractsPillar groups all contract-related configuration.

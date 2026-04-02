@@ -112,6 +112,20 @@ var backendLanguages = []string{
 	"C#/.NET", "Rust", "Ruby", "PHP", "Elixir", "Other",
 }
 
+var backendLintersByLang = map[string][]string{
+	"Go":              {"golangci-lint", "staticcheck", "go vet", "None"},
+	"TypeScript/Node": {"ESLint", "Biome", "TSLint (legacy)", "None"},
+	"Python":          {"Ruff", "Flake8", "Pylint", "mypy", "None"},
+	"Java":            {"Checkstyle", "SpotBugs", "PMD", "SonarLint", "None"},
+	"Kotlin":          {"ktlint", "detekt", "SonarLint", "None"},
+	"C#/.NET":         {"Roslyn Analyzers", "StyleCop", "SonarLint", "None"},
+	"Rust":            {"Clippy", "cargo-audit", "None"},
+	"Ruby":            {"RuboCop", "StandardRB", "None"},
+	"PHP":             {"PHP-CS-Fixer", "PHPStan", "Psalm", "None"},
+	"Elixir":          {"Credo", "Dialyxir", "None"},
+	"Other":           {"Custom", "None"},
+}
+
 // ── field definitions ─────────────────────────────────────────────────────────
 
 func defaultEnvFields() []Field {
@@ -180,9 +194,11 @@ func defaultEnvFields() []Field {
 			Value:   "None", SelIdx: 3,
 		},
 		{
-			Key: "be_linter", Label: "Linter        ", Kind: KindSelect,
-			Options: []string{"golangci-lint", "Ruff", "ESLint", "Checkstyle", "ktlint", "Clippy", "RuboCop", "PHP-CS-Fixer", "Custom", "None"},
-			Value:   "None", SelIdx: 9,
+			Key:     "be_linter",
+			Label:   "Linter        ",
+			Kind:    KindSelect,
+			Options: backendLintersByLang["Go"],
+			Value:   "None", SelIdx: len(backendLintersByLang["Go"]) - 1,
 		},
 	}
 }
@@ -906,6 +922,7 @@ func (be BackendEditor) FromBackendPillar(bp manifest.BackendPillar) BackendEdit
 		be.EnvFields = setFieldValue(be.EnvFields, "be_linter", bp.BackendLinter)
 		if arch == "monolith" {
 			be.EnvFields = setFieldValue(be.EnvFields, "monolith_lang", bp.Language)
+			be.updateEnvMonolithOptions()
 			be.EnvFields = setFieldValue(be.EnvFields, "monolith_fw", bp.Framework)
 		}
 	}
@@ -1321,6 +1338,9 @@ func (be *BackendEditor) applyDropdown() {
 	if f := be.mutableFieldPtr(); f != nil && f.Kind == KindSelect && be.ddOptIdx < len(f.Options) {
 		f.SelIdx = be.ddOptIdx
 		f.Value = f.Options[be.ddOptIdx]
+		if be.activeTab() == beTabEnv && f.Key == "monolith_lang" {
+			be.updateEnvMonolithOptions()
+		}
 	}
 }
 
@@ -1597,6 +1617,9 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 		be.gBuf = false
 		if f := be.mutableFieldPtr(); f != nil && f.Kind == KindSelect {
 			f.CyclePrev()
+			if be.activeTab() == beTabEnv && f.Key == "monolith_lang" {
+				be.updateEnvMonolithOptions()
+			}
 		}
 	case "i", "a":
 		be.countBuf = ""
@@ -1667,7 +1690,7 @@ func (be BackendEditor) updateServiceList(key tea.KeyMsg) (BackendEditor, tea.Cm
 // isServiceFieldHidden returns true when a service form field should be hidden for the current arch.
 func (be BackendEditor) isServiceFieldHidden(key string) bool {
 	arch := be.currentArch()
-	if arch == "monolith" && (key == "language" || key == "framework") {
+	if arch == "monolith" && (key == "language" || key == "framework" || key == "service_discovery") {
 		return true
 	}
 	if arch != "hybrid" && key == "pattern_tag" {
@@ -1742,6 +1765,32 @@ func (be *BackendEditor) updateServiceFrameworkOptions(ed *beListEditor) {
 			ed.form[i].SelIdx = 0
 			ed.form[i].Value = opts[0]
 			break
+		}
+	}
+}
+
+// updateEnvMonolithOptions refreshes the monolith_fw and be_linter dropdowns
+// to match the currently selected monolith_lang.
+func (be *BackendEditor) updateEnvMonolithOptions() {
+	lang := fieldGet(be.EnvFields, "monolith_lang")
+	fwOpts, ok := backendFrameworksByLang[lang]
+	if !ok {
+		fwOpts = []string{"Other"}
+	}
+	lintOpts, ok := backendLintersByLang[lang]
+	if !ok {
+		lintOpts = []string{"Custom", "None"}
+	}
+	for i := range be.EnvFields {
+		switch be.EnvFields[i].Key {
+		case "monolith_fw":
+			be.EnvFields[i].Options = fwOpts
+			be.EnvFields[i].SelIdx = 0
+			be.EnvFields[i].Value = fwOpts[0]
+		case "be_linter":
+			be.EnvFields[i].Options = lintOpts
+			be.EnvFields[i].SelIdx = len(lintOpts) - 1
+			be.EnvFields[i].Value = lintOpts[len(lintOpts)-1]
 		}
 	}
 }
@@ -2339,8 +2388,8 @@ func (be BackendEditor) viewServiceEditor(w int) []string {
 	filteredActiveIdx := ed.formIdx
 	skippedBefore := 0
 	for i, f := range ed.form {
-		// For monolith: language and framework are defined at top level (ENV tab)
-		if arch == "monolith" && (f.Key == "language" || f.Key == "framework") {
+		// For monolith: language, framework, and service_discovery are defined at top level (ENV tab)
+		if arch == "monolith" && (f.Key == "language" || f.Key == "framework" || f.Key == "service_discovery") {
 			if i < ed.formIdx {
 				skippedBefore++
 			}

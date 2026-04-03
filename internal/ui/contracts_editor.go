@@ -177,7 +177,10 @@ func defaultVersioningFields() []Field {
 	}
 }
 
-func defaultExternalAPIFormFields() []Field {
+func defaultExternalAPIFormFields(dtoOptions []string) []Field {
+	if dtoOptions == nil {
+		dtoOptions = []string{}
+	}
 	return []Field{
 		{Key: "provider", Label: "provider      ", Kind: KindText},
 		{
@@ -192,6 +195,14 @@ func defaultExternalAPIFormFields() []Field {
 			Key: "failure_strategy", Label: "failure_strat ", Kind: KindSelect,
 			Options: []string{"Circuit Breaker", "Retry with backoff", "Fallback value", "Timeout + fail", "None"},
 			Value:   "Circuit Breaker",
+		},
+		{Key: "request_dto", Label: "request_dto   ", Kind: KindSelect,
+			Options: dtoOptions,
+			Value:   placeholderFor(dtoOptions, "(no DTOs configured)"),
+		},
+		{Key: "response_dto", Label: "response_dto  ", Kind: KindSelect,
+			Options: dtoOptions,
+			Value:   placeholderFor(dtoOptions, "(no DTOs configured)"),
 		},
 	}
 }
@@ -963,14 +974,6 @@ func (ce *ContractsEditor) populateDTOFieldsFromDomains() {
 			break
 		}
 	}
-	// Fallback placeholder if no domain attrs found
-	if len(ce.dtoFieldItems) == 0 {
-		placeholder := defaultDTOFieldForm()
-		placeholder = setFieldValue(placeholder, "name", "id")
-		placeholder = setFieldValue(placeholder, "type", "uuid")
-		placeholder = setFieldValue(placeholder, "required", "true")
-		ce.dtoFieldItems = append(ce.dtoFieldItems, placeholder)
-	}
 }
 
 func domainTypeToDTOType(t string) string {
@@ -1309,7 +1312,7 @@ func (ce ContractsEditor) updateExtList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 	case "a":
 		ce.externalAPIs = append(ce.externalAPIs, manifest.ExternalAPIDef{})
 		ce.extIdx = len(ce.externalAPIs) - 1
-		ce.extForm = defaultExternalAPIFormFields()
+		ce.extForm = defaultExternalAPIFormFields(ce.dtoNames())
 		ce.extFormIdx = 0
 		ce.extSubView = ceViewForm
 		return ce.tryEnterInsert()
@@ -1323,13 +1326,15 @@ func (ce ContractsEditor) updateExtList(key tea.KeyMsg) (ContractsEditor, tea.Cm
 	case "enter":
 		if n > 0 {
 			api := ce.externalAPIs[ce.extIdx]
-			ce.extForm = defaultExternalAPIFormFields()
+			ce.extForm = defaultExternalAPIFormFields(ce.dtoNames())
 			ce.extForm = setFieldValue(ce.extForm, "provider", api.Provider)
 			ce.extForm = setFieldValue(ce.extForm, "auth_mechanism", api.AuthMechanism)
 			ce.extForm = setFieldValue(ce.extForm, "base_url", api.BaseURL)
 			ce.extForm = setFieldValue(ce.extForm, "rate_limit", api.RateLimit)
 			ce.extForm = setFieldValue(ce.extForm, "webhook_endpoint", api.WebhookEndpoint)
 			ce.extForm = setFieldValue(ce.extForm, "failure_strategy", api.FailureStrategy)
+			ce.extForm = setFieldValue(ce.extForm, "request_dto", api.RequestDTO)
+			ce.extForm = setFieldValue(ce.extForm, "response_dto", api.ResponseDTO)
 			ce.extFormIdx = 0
 			ce.extSubView = ceViewForm
 		}
@@ -1382,6 +1387,8 @@ func (ce *ContractsEditor) saveExtForm() {
 	api.RateLimit = fieldGet(ce.extForm, "rate_limit")
 	api.WebhookEndpoint = fieldGet(ce.extForm, "webhook_endpoint")
 	api.FailureStrategy = fieldGet(ce.extForm, "failure_strategy")
+	api.RequestDTO = fieldGet(ce.extForm, "request_dto")
+	api.ResponseDTO = fieldGet(ce.extForm, "response_dto")
 }
 
 func (ce ContractsEditor) viewExternal(w int) []string {

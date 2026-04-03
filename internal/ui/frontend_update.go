@@ -174,12 +174,6 @@ func (fe FrontendEditor) updatePages(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
 	if fe.pageSubView == ceViewList {
 		return fe.updatePageList(key)
 	}
-	if fe.inPageComp {
-		if fe.compSubView == ceViewList {
-			return fe.updateCompList(key)
-		}
-		return fe.updateCompForm(key)
-	}
 	return fe.updatePageForm(key)
 }
 
@@ -197,7 +191,7 @@ func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 	case "a":
 		fe.pages = append(fe.pages, manifest.PageDef{})
 		fe.pageIdx = len(fe.pages) - 1
-		fe.pageForm = defaultPageFormFields(fe.availableAuthRoles, fe.pageRoutes(), fe.assetNames())
+		fe.pageForm = defaultPageFormFields(fe.availableAuthRoles, fe.pageRoutes(), fe.assetNames(), fe.componentNames())
 		existing := make([]string, 0, len(fe.pages)-1)
 		for i, p := range fe.pages {
 			if i != fe.pageIdx {
@@ -227,7 +221,7 @@ func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 					otherRoutes = append(otherRoutes, pg.Route)
 				}
 			}
-			fe.pageForm = defaultPageFormFields(fe.availableAuthRoles, otherRoutes, fe.assetNames())
+			fe.pageForm = defaultPageFormFields(fe.availableAuthRoles, otherRoutes, fe.assetNames(), fe.componentNames())
 			fe.pageForm = setFieldValue(fe.pageForm, "name", p.Name)
 			fe.pageForm = setFieldValue(fe.pageForm, "route", p.Route)
 			if p.Purpose != "" {
@@ -290,6 +284,21 @@ func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 					}
 				}
 			}
+			// Restore multiselect for component_refs
+			if p.ComponentRefs != "" {
+				for i := range fe.pageForm {
+					if fe.pageForm[i].Key == "component_refs" {
+						for _, sel := range strings.Split(p.ComponentRefs, ", ") {
+							for j, opt := range fe.pageForm[i].Options {
+								if opt == strings.TrimSpace(sel) {
+									fe.pageForm[i].SelectedIdxs = append(fe.pageForm[i].SelectedIdxs, j)
+								}
+							}
+						}
+						break
+					}
+				}
+			}
 			fe.pageFormIdx = 0
 			fe.pageSubView = ceViewForm
 		}
@@ -332,20 +341,8 @@ func (fe FrontendEditor) updatePageForm(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 		if fe.pageForm[fe.pageFormIdx].CanEditAsText() {
 			return fe.tryEnterInsert()
 		}
-	case "c", "C":
-		fe.savePageForm()
-		if fe.pageIdx < len(fe.pages) {
-			fe.pageComps = make([]manifest.PageComponentDef, len(fe.pages[fe.pageIdx].Components))
-			copy(fe.pageComps, fe.pages[fe.pageIdx].Components)
-		} else {
-			fe.pageComps = nil
-		}
-		fe.inPageComp = true
-		fe.compSubView = ceViewList
-		fe.compIdx = 0
 	case "b", "esc":
 		fe.savePageForm()
-		fe.inPageComp = false
 		fe.pageSubView = ceViewList
 	}
 	return fe, nil
@@ -412,112 +409,50 @@ func (fe *FrontendEditor) savePageForm() {
 	p.AuthRoles = fieldGetMulti(fe.pageForm, "auth_roles")
 	p.LinkedPages = fieldGetMulti(fe.pageForm, "linked_pages")
 	p.Assets = fieldGetMulti(fe.pageForm, "assets")
+	p.ComponentRefs = fieldGetMulti(fe.pageForm, "component_refs")
 }
 
-func (fe *FrontendEditor) saveCompsToPage() {
-	if fe.pageIdx >= len(fe.pages) {
-		return
-	}
-	comps := make([]manifest.PageComponentDef, len(fe.pageComps))
-	copy(comps, fe.pageComps)
-	fe.pages[fe.pageIdx].Components = comps
-}
 
 func (fe *FrontendEditor) saveCompForm() {
-	if fe.compIdx >= len(fe.pageComps) {
+	if fe.compIdx >= len(fe.components) {
 		return
 	}
-	c := &fe.pageComps[fe.compIdx]
+	c := &fe.components[fe.compIdx]
 	c.Name = fieldGet(fe.compForm, "name")
 	c.ComponentType = fieldGet(fe.compForm, "comp_type")
 	c.ConnectedEndpoints = fieldGetMulti(fe.compForm, "endpoints")
-	reqDTO := fieldGet(fe.compForm, "request_dto")
-	if reqDTO == "None" {
-		reqDTO = ""
-	}
-	c.RequestDTO = reqDTO
-	respDTO := fieldGet(fe.compForm, "response_dto")
-	if respDTO == "None" {
-		respDTO = ""
-	}
-	c.ResponseDTO = respDTO
 	c.Description = fieldGet(fe.compForm, "description")
 }
 
-func (fe FrontendEditor) updateCompList(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
-	n := len(fe.pageComps)
-	switch key.String() {
-	case "j", "down":
-		if n > 0 && fe.compIdx < n-1 {
-			fe.compIdx++
-		}
-	case "k", "up":
-		if fe.compIdx > 0 {
-			fe.compIdx--
-		}
-	case "a":
-		fe.pageComps = append(fe.pageComps, manifest.PageComponentDef{})
-		fe.compIdx = len(fe.pageComps) - 1
-		existing := make([]string, 0, len(fe.pageComps)-1)
-		for i, c := range fe.pageComps {
-			if i != fe.compIdx {
-				existing = append(existing, c.Name)
-			}
-		}
-		fe.compForm = defaultComponentFormFields(fe.availableEndpoints, fe.availableDTOs)
-		fe.compForm = setFieldValue(fe.compForm, "name", uniqueName("component", existing))
-		fe.compFormIdx = 0
-		fe.compSubView = ceViewForm
-		return fe.tryEnterInsert()
-	case "d":
-		if n > 0 {
-			fe.pageComps = append(fe.pageComps[:fe.compIdx], fe.pageComps[fe.compIdx+1:]...)
-			if fe.compIdx > 0 && fe.compIdx >= len(fe.pageComps) {
-				fe.compIdx = len(fe.pageComps) - 1
-			}
-			fe.saveCompsToPage()
-		}
-	case "enter":
-		if n > 0 {
-			c := fe.pageComps[fe.compIdx]
-			fe.compForm = defaultComponentFormFields(fe.availableEndpoints, fe.availableDTOs)
-			fe.compForm = setFieldValue(fe.compForm, "name", c.Name)
-			fe.compForm = setFieldValue(fe.compForm, "comp_type", c.ComponentType)
-			reqDTO := c.RequestDTO
-			if reqDTO == "" {
-				reqDTO = "None"
-			}
-			fe.compForm = setFieldValue(fe.compForm, "request_dto", reqDTO)
-			respDTO := c.ResponseDTO
-			if respDTO == "" {
-				respDTO = "None"
-			}
-			fe.compForm = setFieldValue(fe.compForm, "response_dto", respDTO)
-			fe.compForm = setFieldValue(fe.compForm, "description", c.Description)
-			// Restore multiselect for endpoints
-			if c.ConnectedEndpoints != "" {
-				for i := range fe.compForm {
-					if fe.compForm[i].Key == "endpoints" {
-						for _, sel := range strings.Split(c.ConnectedEndpoints, ", ") {
-							for j, opt := range fe.compForm[i].Options {
-								if opt == strings.TrimSpace(sel) {
-									fe.compForm[i].SelectedIdxs = append(fe.compForm[i].SelectedIdxs, j)
-								}
-							}
-						}
-						break
-					}
-				}
-			}
-			fe.compFormIdx = 0
-			fe.compSubView = ceViewForm
-		}
-	case "b", "esc":
-		fe.saveCompsToPage()
-		fe.inPageComp = false
+func (fe *FrontendEditor) saveActionsToComp() {
+	if fe.compIdx >= len(fe.components) {
+		return
 	}
-	return fe, nil
+	acts := make([]manifest.ComponentActionDef, len(fe.compActions))
+	copy(acts, fe.compActions)
+	fe.components[fe.compIdx].Actions = acts
 }
+
+func (fe *FrontendEditor) saveActionForm() {
+	if fe.actionIdx >= len(fe.compActions) {
+		return
+	}
+	a := &fe.compActions[fe.actionIdx]
+	a.Trigger = fieldGet(fe.actionForm, "trigger")
+	a.ActionType = fieldGet(fe.actionForm, "action_type")
+	ep := fieldGet(fe.actionForm, "endpoint")
+	if ep == "None" {
+		ep = ""
+	}
+	a.Endpoint = ep
+	tp := fieldGet(fe.actionForm, "target_page")
+	if tp == "(none)" {
+		tp = ""
+	}
+	a.TargetPage = tp
+	a.Description = fieldGet(fe.actionForm, "description")
+}
+
 
 func (fe FrontendEditor) updateCompForm(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
 	if fe.dd.Open {
@@ -549,13 +484,25 @@ func (fe FrontendEditor) updateCompForm(key tea.KeyMsg) (FrontendEditor, tea.Cmd
 		if f.Kind == KindSelect {
 			f.CyclePrev()
 		}
-	case "i", "a":
+	case "i":
 		if fe.compForm[fe.compFormIdx].CanEditAsText() {
 			return fe.tryEnterInsert()
 		}
+	case "a", "A":
+		fe.saveCompForm()
+		fe.currentCompType = fieldGet(fe.compForm, "comp_type")
+		if fe.compIdx < len(fe.components) {
+			acts := fe.components[fe.compIdx].Actions
+			fe.compActions = make([]manifest.ComponentActionDef, len(acts))
+			copy(fe.compActions, acts)
+		} else {
+			fe.compActions = nil
+		}
+		fe.inCompAction = true
+		fe.actionSubView = ceViewList
+		fe.actionIdx = 0
 	case "b", "esc":
 		fe.saveCompForm()
-		fe.saveCompsToPage()
 		fe.compSubView = ceViewList
 	}
 	return fe, nil
@@ -594,6 +541,202 @@ func (fe FrontendEditor) updateCompFormDropdown(key tea.KeyMsg) (FrontendEditor,
 		if f.Kind == KindMultiSelect {
 			f.DDCursor = fe.dd.OptIdx
 		}
+		fe.dd.Open = false
+	}
+	return fe, nil
+}
+
+// ── COMPONENTS tab ────────────────────────────────────────────────────────────
+
+func (fe FrontendEditor) updateComponents(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	if fe.inCompAction {
+		if fe.actionSubView == ceViewList {
+			return fe.updateCompActionList(key)
+		}
+		return fe.updateCompActionForm(key)
+	}
+	if fe.compSubView == ceViewForm {
+		return fe.updateCompForm(key)
+	}
+	return fe.updateCompLibList(key)
+}
+
+func (fe FrontendEditor) updateCompLibList(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	n := len(fe.components)
+	switch key.String() {
+	case "j", "down":
+		if n > 0 && fe.compIdx < n-1 {
+			fe.compIdx++
+		}
+	case "k", "up":
+		if fe.compIdx > 0 {
+			fe.compIdx--
+		}
+	case "a":
+		existing := make([]string, 0, n)
+		for _, c := range fe.components {
+			existing = append(existing, c.Name)
+		}
+		fe.components = append(fe.components, manifest.PageComponentDef{})
+		fe.compIdx = len(fe.components) - 1
+		fe.compForm = defaultComponentFormFields(fe.availableEndpoints)
+		fe.compForm = setFieldValue(fe.compForm, "name", uniqueName("component", existing))
+		fe.compFormIdx = 0
+		fe.compSubView = ceViewForm
+		return fe.tryEnterInsert()
+	case "d":
+		if n > 0 {
+			fe.components = append(fe.components[:fe.compIdx], fe.components[fe.compIdx+1:]...)
+			if fe.compIdx > 0 && fe.compIdx >= len(fe.components) {
+				fe.compIdx = len(fe.components) - 1
+			}
+		}
+	case "enter":
+		if n > 0 {
+			c := fe.components[fe.compIdx]
+			fe.compForm = defaultComponentFormFields(fe.availableEndpoints)
+			fe.compForm = setFieldValue(fe.compForm, "name", c.Name)
+			fe.compForm = setFieldValue(fe.compForm, "comp_type", c.ComponentType)
+			fe.compForm = setFieldValue(fe.compForm, "description", c.Description)
+			if c.ConnectedEndpoints != "" {
+				for i := range fe.compForm {
+					if fe.compForm[i].Key == "endpoints" {
+						for _, sel := range strings.Split(c.ConnectedEndpoints, ", ") {
+							for j, opt := range fe.compForm[i].Options {
+								if opt == strings.TrimSpace(sel) {
+									fe.compForm[i].SelectedIdxs = append(fe.compForm[i].SelectedIdxs, j)
+								}
+							}
+						}
+						break
+					}
+				}
+			}
+			fe.compFormIdx = 0
+			fe.inCompAction = false
+			fe.compSubView = ceViewForm
+		}
+	}
+	return fe, nil
+}
+
+func (fe FrontendEditor) updateCompActionList(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	n := len(fe.compActions)
+	switch key.String() {
+	case "j", "down":
+		if n > 0 && fe.actionIdx < n-1 {
+			fe.actionIdx++
+		}
+	case "k", "up":
+		if fe.actionIdx > 0 {
+			fe.actionIdx--
+		}
+	case "a":
+		fe.compActions = append(fe.compActions, manifest.ComponentActionDef{})
+		fe.actionIdx = len(fe.compActions) - 1
+		fe.actionForm = defaultActionFormFields(fe.currentCompType, fe.availableEndpoints, fe.pageRoutes())
+		fe.actionFormIdx = 0
+		fe.actionSubView = ceViewForm
+		return fe.tryEnterInsert()
+	case "d":
+		if n > 0 {
+			fe.compActions = append(fe.compActions[:fe.actionIdx], fe.compActions[fe.actionIdx+1:]...)
+			if fe.actionIdx > 0 && fe.actionIdx >= len(fe.compActions) {
+				fe.actionIdx = len(fe.compActions) - 1
+			}
+			fe.saveActionsToComp()
+		}
+	case "enter":
+		if n > 0 {
+			a := fe.compActions[fe.actionIdx]
+			fe.actionForm = defaultActionFormFields(fe.currentCompType, fe.availableEndpoints, fe.pageRoutes())
+			if a.Trigger != "" {
+				fe.actionForm = setFieldValue(fe.actionForm, "trigger", a.Trigger)
+			}
+			if a.ActionType != "" {
+				fe.actionForm = setFieldValue(fe.actionForm, "action_type", a.ActionType)
+			}
+			ep := a.Endpoint
+			if ep == "" {
+				ep = "None"
+			}
+			fe.actionForm = setFieldValue(fe.actionForm, "endpoint", ep)
+			tp := a.TargetPage
+			if tp == "" {
+				tp = "(none)"
+			}
+			fe.actionForm = setFieldValue(fe.actionForm, "target_page", tp)
+			fe.actionForm = setFieldValue(fe.actionForm, "description", a.Description)
+			fe.actionFormIdx = 0
+			fe.actionSubView = ceViewForm
+		}
+	case "b", "esc":
+		fe.saveActionsToComp()
+		fe.inCompAction = false
+	}
+	return fe, nil
+}
+
+func (fe FrontendEditor) updateCompActionForm(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	if fe.dd.Open {
+		return fe.updateCompActionFormDropdown(key)
+	}
+	switch key.String() {
+	case "j", "down":
+		fe.actionFormIdx = nextActionFormIdx(fe.actionForm, fe.actionFormIdx)
+	case "k", "up":
+		fe.actionFormIdx = prevActionFormIdx(fe.actionForm, fe.actionFormIdx)
+	case "enter", " ":
+		f := &fe.actionForm[fe.actionFormIdx]
+		if f.Kind == KindSelect {
+			fe.dd.Open = true
+			fe.dd.OptIdx = f.SelIdx
+		} else {
+			return fe.tryEnterInsert()
+		}
+	case "H", "shift+left":
+		f := &fe.actionForm[fe.actionFormIdx]
+		if f.Kind == KindSelect {
+			f.CyclePrev()
+			// Reposition cursor if it landed on a now-hidden field.
+			if isActionFieldHidden(fe.actionForm, fe.actionFormIdx) {
+				fe.actionFormIdx = nextActionFormIdx(fe.actionForm, fe.actionFormIdx)
+			}
+		}
+	case "i", "a":
+		if fe.actionForm[fe.actionFormIdx].CanEditAsText() {
+			return fe.tryEnterInsert()
+		}
+	case "b", "esc":
+		fe.saveActionForm()
+		fe.saveActionsToComp()
+		fe.actionSubView = ceViewList
+	}
+	return fe, nil
+}
+
+func (fe FrontendEditor) updateCompActionFormDropdown(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
+	if fe.actionFormIdx >= len(fe.actionForm) {
+		fe.dd.Open = false
+		return fe, nil
+	}
+	f := &fe.actionForm[fe.actionFormIdx]
+	fe.dd.OptIdx = NavigateDropdown(key.String(), fe.dd.OptIdx, len(f.Options))
+	switch key.String() {
+	case " ", "enter":
+		f.SelIdx = fe.dd.OptIdx
+		if fe.dd.OptIdx < len(f.Options) {
+			f.Value = f.Options[fe.dd.OptIdx]
+		}
+		fe.dd.Open = false
+		// If action_type changed, current cursor may now be on a hidden field.
+		if f.Key == "action_type" && isActionFieldHidden(fe.actionForm, fe.actionFormIdx) {
+			fe.actionFormIdx = nextActionFormIdx(fe.actionForm, fe.actionFormIdx)
+		}
+		if f.PrepareCustomEntry() {
+			return fe.tryEnterInsert()
+		}
+	case "esc", "b":
 		fe.dd.Open = false
 	}
 	return fe, nil
@@ -709,10 +852,16 @@ func (fe FrontendEditor) View(w, h int) string {
 		pageLines := fe.viewPages(w)
 		if fe.pageSubView == ceViewList {
 			pageLines = appendViewport(pageLines, 2, fe.pageIdx, h-feHeaderH)
-		} else if fe.inPageComp && fe.compSubView == ceViewList {
-			pageLines = appendViewport(pageLines, 2, fe.compIdx, h-feHeaderH)
 		}
 		lines = append(lines, pageLines...)
+	case feTabComponents:
+		compLines := fe.viewComponents(w)
+		if fe.compSubView == ceViewList && !fe.inCompAction {
+			compLines = appendViewport(compLines, 2, fe.compIdx, h-feHeaderH)
+		} else if fe.inCompAction && fe.actionSubView == ceViewList {
+			compLines = appendViewport(compLines, 2, fe.actionIdx, h-feHeaderH)
+		}
+		lines = append(lines, compLines...)
 	case feTabNav:
 		if fe.navEnabled {
 			fl := renderFormFields(w, fe.navFields, fe.navFormIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)

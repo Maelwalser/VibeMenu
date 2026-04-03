@@ -160,6 +160,47 @@ func (fe FrontendEditor) updateA11ySEODropdown(key tea.KeyMsg) (FrontendEditor, 
 	return fe, nil
 }
 
+func (fe FrontendEditor) viewComponents(w int) []string {
+	switch fe.compSubView {
+	case ceViewList:
+		var lines []string
+		lines = append(lines, StyleSectionDesc.Render("  # Components — a: add  d: delete  Enter: edit"), "")
+		if len(fe.components) == 0 {
+			lines = append(lines, StyleSectionDesc.Render("  (no components yet — press 'a' to add)"))
+		} else {
+			for i, c := range fe.components {
+				name := c.Name
+				if name == "" {
+					name = fmt.Sprintf("(component #%d)", i+1)
+				}
+				detail := c.ComponentType
+				nAct := len(c.Actions)
+				if nAct == 1 {
+					detail += "  [1 action]"
+				} else if nAct > 1 {
+					detail += fmt.Sprintf("  [%d actions]", nAct)
+				}
+				lines = append(lines, renderListItem(w, i == fe.compIdx, "  ▶ ", name, detail))
+			}
+		}
+		return lines
+
+	case ceViewForm:
+		if fe.inCompAction {
+			return fe.viewComponentActions(w)
+		}
+		compName := fieldGet(fe.compForm, "name")
+		if compName == "" {
+			compName = "(new component)"
+		}
+		var lines []string
+		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(compName)+StyleSectionDesc.Render("  [A: actions]"), "")
+		lines = append(lines, renderFormFields(w, fe.compForm, fe.compFormIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)...)
+		return lines
+	}
+	return nil
+}
+
 func (fe FrontendEditor) viewPages(w int) []string {
 	switch fe.pageSubView {
 	case ceViewList:
@@ -173,18 +214,9 @@ func (fe FrontendEditor) viewPages(w int) []string {
 				if name == "" {
 					name = fmt.Sprintf("(page #%d)", i+1)
 				}
-				nComp := len(p.Components)
-				suffix := ""
-				if nComp == 1 {
-					suffix = "1 component"
-				} else if nComp > 1 {
-					suffix = fmt.Sprintf("%d components", nComp)
-				}
 				detail := p.Route
-				if suffix != "" && detail != "" {
-					detail = detail + "  [" + suffix + "]"
-				} else if suffix != "" {
-					detail = "[" + suffix + "]"
+				if p.ComponentRefs != "" {
+					detail += "  [components: " + p.ComponentRefs + "]"
 				}
 				lines = append(lines, renderListItem(w, i == fe.pageIdx, "  ▶ ", name, detail))
 			}
@@ -192,55 +224,58 @@ func (fe FrontendEditor) viewPages(w int) []string {
 		return lines
 
 	case ceViewForm:
-		if fe.inPageComp {
-			return fe.viewPageComponents(w)
-		}
 		name := fieldGet(fe.pageForm, "name")
 		if name == "" {
 			name = "(new page)"
 		}
 		var lines []string
-		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name)+StyleSectionDesc.Render("  [C: components]"), "")
+		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
 		lines = append(lines, renderFormFields(w, fe.pageForm, fe.pageFormIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)...)
 		return lines
 	}
 	return nil
 }
 
-func (fe FrontendEditor) viewPageComponents(w int) []string {
-	pageName := ""
-	if fe.pageIdx < len(fe.pages) {
-		pageName = fe.pages[fe.pageIdx].Name
+func (fe FrontendEditor) viewComponentActions(w int) []string {
+	compName := ""
+	if fe.compIdx < len(fe.components) {
+		compName = fe.components[fe.compIdx].Name
 	}
-	if pageName == "" {
-		pageName = "(page)"
+	if compName == "" {
+		compName = "(component)"
 	}
 
-	switch fe.compSubView {
+	switch fe.actionSubView {
 	case ceViewList:
 		var lines []string
-		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(pageName)+StyleSectionDesc.Render(" › Components — a: add  d: delete  Enter: edit"), "")
-		if len(fe.pageComps) == 0 {
-			lines = append(lines, StyleSectionDesc.Render("  (no components yet — press 'a' to add)"))
+		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(compName)+StyleSectionDesc.Render(" › Actions — a: add  d: delete  Enter: edit"), "")
+		if len(fe.compActions) == 0 {
+			lines = append(lines, StyleSectionDesc.Render("  (no actions yet — press 'a' to add)"))
 		} else {
-			for i, c := range fe.pageComps {
-				name := c.Name
-				if name == "" {
-					name = fmt.Sprintf("(component #%d)", i+1)
+			for i, a := range fe.compActions {
+				label := a.Trigger
+				if label == "" {
+					label = fmt.Sprintf("(action #%d)", i+1)
 				}
-				lines = append(lines, renderListItem(w, i == fe.compIdx, "  ▶ ", name, c.ComponentType))
+				detail := a.ActionType
+				if a.Endpoint != "" {
+					detail += " → " + a.Endpoint
+				}
+				lines = append(lines, renderListItem(w, i == fe.actionIdx, "  ▶ ", label, detail))
 			}
 		}
 		return lines
 
 	case ceViewForm:
-		compName := fieldGet(fe.compForm, "name")
-		if compName == "" {
-			compName = "(new component)"
+		trigger := fieldGet(fe.actionForm, "trigger")
+		if trigger == "" {
+			trigger = "(new action)"
 		}
+		vis := actionVisibleFields(fe.actionForm)
+		visIdx := actionVisibleIdx(fe.actionForm, fe.actionFormIdx)
 		var lines []string
-		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(pageName+" › "+compName), "")
-		lines = append(lines, renderFormFields(w, fe.compForm, fe.compFormIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)...)
+		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(compName+" › "+trigger), "")
+		lines = append(lines, renderFormFields(w, vis, visIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)...)
 		return lines
 	}
 	return nil

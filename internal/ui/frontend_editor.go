@@ -15,13 +15,14 @@ const (
 	feTabTech feTabIdx = iota
 	feTabTheme
 	feTabPages
+	feTabComponents
 	feTabNav
 	feTabI18n
 	feTabA11ySEO
 	feTabAssets
 )
 
-var feTabLabels = []string{"TECHNOLOGIES", "THEMING", "PAGES", "NAVIGATION", "I18N", "A11Y/SEO", "ASSETS"}
+var feTabLabels = []string{"TECHNOLOGIES", "THEMING", "PAGES", "COMPONENTS", "NAVIGATION", "I18N", "A11Y/SEO", "ASSETS"}
 
 
 // ── FrontendEditor ────────────────────────────────────────────────────────────
@@ -69,20 +70,27 @@ type FrontendEditor struct {
 	assetForm    []Field
 	assetFormIdx int
 
-	// COMPONENTS (drill-down from page form — press C)
-	inPageComp  bool
-	pageComps   []manifest.PageComponentDef
-	compSubView ceSubView
+	// COMPONENTS (shared library — managed in COMPONENTS tab)
+	components  []manifest.PageComponentDef
+	compSubView ceSubView // ceViewList | ceViewForm within COMPONENTS tab
 	compIdx     int
 	compForm    []Field
 	compFormIdx int
+
+	// ACTIONS (drill-down from component form — press A)
+	inCompAction    bool
+	currentCompType string // component type of the comp being edited, for action form options
+	compActions     []manifest.ComponentActionDef
+	actionSubView   ceSubView
+	actionIdx       int
+	actionForm      []Field
+	actionFormIdx   int
 
 	// Cross-editor data
 	availableAuthRoles   []string // from BackendEditor auth roles
 	backendProtocols     []string // comm-link protocols (REST (HTTP), GraphQL, gRPC, tRPC, …)
 	backendSvcFrameworks []string // service frameworks (tRPC, NestJS, …)
 	availableEndpoints   []string // from ContractsEditor.EndpointNames()
-	availableDTOs        []string // from ContractsEditor.DTONames()
 
 	// Dropdown state for KindSelect/KindMultiSelect fields
 	dd DropdownState
@@ -129,11 +137,6 @@ func (fe *FrontendEditor) SetAvailableEndpoints(endpoints []string) {
 	fe.availableEndpoints = endpoints
 }
 
-// SetAvailableDTOs updates the DTO name list for component forms.
-func (fe *FrontendEditor) SetAvailableDTOs(dtos []string) {
-	fe.availableDTOs = dtos
-}
-
 // Language returns the frontend language selected in the Tech sub-tab.
 func (fe FrontendEditor) Language() string { return fieldGet(fe.techFields, "language") }
 
@@ -142,6 +145,17 @@ func (fe FrontendEditor) Framework() string { return fieldGet(fe.techFields, "fr
 
 // Platform returns the frontend platform selected in the Tech sub-tab.
 func (fe FrontendEditor) Platform() string { return fieldGet(fe.techFields, "platform") }
+
+// componentNames returns the names of all components in the shared library.
+func (fe FrontendEditor) componentNames() []string {
+	names := make([]string, 0, len(fe.components))
+	for _, c := range fe.components {
+		if c.Name != "" {
+			names = append(names, c.Name)
+		}
+	}
+	return names
+}
 
 // pageRoutes returns routes of all existing pages (for linked_pages options).
 func (fe FrontendEditor) pageRoutes() []string {
@@ -170,9 +184,12 @@ func (fe FrontendEditor) assetNames() []string {
 func (fe FrontendEditor) ToManifestFrontendPillar() manifest.FrontendPillar {
 	assets := make([]manifest.AssetDef, len(fe.assets))
 	copy(assets, fe.assets)
+	components := make([]manifest.PageComponentDef, len(fe.components))
+	copy(components, fe.components)
 	p := manifest.FrontendPillar{
-		Pages:  fe.pages,
-		Assets: assets,
+		Components: components,
+		Pages:      fe.pages,
+		Assets:     assets,
 	}
 	if fe.techEnabled {
 		p.Tech = manifest.FrontendTechConfig{
@@ -287,6 +304,7 @@ func (fe FrontendEditor) FromFrontendPillar(fp manifest.FrontendPillar) Frontend
 	}
 
 	// Collections stored directly; per-item forms rebuilt lazily on navigation.
+	fe.components = fp.Components
 	fe.pages = fp.Pages
 	fe.assets = fp.Assets
 
@@ -368,17 +386,22 @@ func (fe FrontendEditor) HintLine() string {
 			return hintBar("a", "configure", "h/l", "sub-tab")
 		}
 		return hintBar("j/k", "navigate", "Space/Enter", "cycle", "H", "cycle back", "D", "delete config", "a/i", "edit", "h/l", "sub-tab")
+	case feTabComponents:
+		if fe.inCompAction {
+			if fe.actionSubView == ceViewList {
+				return hintBar("j/k", "navigate", "a", "add action", "d", "delete", "Enter", "edit", "b/Esc", "back")
+			}
+			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
+		}
+		if fe.compSubView == ceViewForm {
+			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "A", "actions", "b/Esc", "back")
+		}
+		return hintBar("j/k", "navigate", "a", "add", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
 	case feTabPages:
 		if fe.pageSubView == ceViewList {
 			return hintBar("j/k", "navigate", "a", "add page", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
 		}
-		if fe.inPageComp {
-			if fe.compSubView == ceViewList {
-				return hintBar("j/k", "navigate", "a", "add component", "d", "delete", "Enter", "edit", "b/Esc", "back")
-			}
-			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
-		}
-		return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "C", "components", "b/Esc", "back")
+		return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
 	case feTabAssets:
 		if fe.assetSubView == ceViewList {
 			return hintBar("j/k", "navigate", "a", "add asset", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
@@ -405,10 +428,13 @@ func (fe FrontendEditor) Update(msg tea.Msg) (FrontendEditor, tea.Cmd) {
 		return fe, nil
 	}
 
-	// Sub-tab switching always available in normal mode
+	// Sub-tab switching — blocked while inside a component or action form.
 	switch key.String() {
 	case "h", "left", "l", "right":
-		fe.activeTab = feTabIdx(NavigateTab(key.String(), int(fe.activeTab), len(feTabLabels)))
+		inCompForm := fe.activeTab == feTabComponents && (fe.compSubView == ceViewForm || fe.inCompAction)
+		if !inCompForm {
+			fe.activeTab = feTabIdx(NavigateTab(key.String(), int(fe.activeTab), len(feTabLabels)))
+		}
 		return fe, nil
 	}
 
@@ -419,6 +445,8 @@ func (fe FrontendEditor) Update(msg tea.Msg) (FrontendEditor, tea.Cmd) {
 		return fe.updateTheme(key)
 	case feTabPages:
 		return fe.updatePages(key)
+	case feTabComponents:
+		return fe.updateComponents(key)
 	case feTabNav:
 		return fe.updateNav(key)
 	case feTabI18n:
@@ -486,13 +514,21 @@ func (fe *FrontendEditor) advanceField(delta int) {
 		if n > 0 {
 			fe.themeFormIdx = (fe.themeFormIdx + delta + n) % n
 		}
-	case feTabPages:
-		if fe.inPageComp && fe.compSubView == ceViewForm {
+	case feTabComponents:
+		if fe.inCompAction && fe.actionSubView == ceViewForm {
+			if delta > 0 {
+				fe.actionFormIdx = nextActionFormIdx(fe.actionForm, fe.actionFormIdx)
+			} else {
+				fe.actionFormIdx = prevActionFormIdx(fe.actionForm, fe.actionFormIdx)
+			}
+		} else if fe.compSubView == ceViewForm {
 			n := len(fe.compForm)
 			if n > 0 {
 				fe.compFormIdx = (fe.compFormIdx + delta + n) % n
 			}
-		} else if fe.pageSubView == ceViewForm {
+		}
+	case feTabPages:
+		if fe.pageSubView == ceViewForm {
 			n := len(fe.pageForm)
 			if n > 0 {
 				fe.pageFormIdx = (fe.pageFormIdx + delta + n) % n
@@ -541,10 +577,14 @@ func (fe *FrontendEditor) saveInput() {
 		if fe.themeFormIdx < len(fe.themeFields) && fe.themeFields[fe.themeFormIdx].CanEditAsText() {
 			fe.themeFields[fe.themeFormIdx].SaveTextInput(val)
 		}
-	case feTabPages:
-		if fe.inPageComp && fe.compSubView == ceViewForm && fe.compFormIdx < len(fe.compForm) && fe.compForm[fe.compFormIdx].CanEditAsText() {
+	case feTabComponents:
+		if fe.inCompAction && fe.actionSubView == ceViewForm && fe.actionFormIdx < len(fe.actionForm) && fe.actionForm[fe.actionFormIdx].CanEditAsText() {
+			fe.actionForm[fe.actionFormIdx].SaveTextInput(val)
+		} else if fe.compSubView == ceViewForm && fe.compFormIdx < len(fe.compForm) && fe.compForm[fe.compFormIdx].CanEditAsText() {
 			fe.compForm[fe.compFormIdx].SaveTextInput(val)
-		} else if fe.pageSubView == ceViewForm && fe.pageFormIdx < len(fe.pageForm) && fe.pageForm[fe.pageFormIdx].CanEditAsText() {
+		}
+	case feTabPages:
+		if fe.pageSubView == ceViewForm && fe.pageFormIdx < len(fe.pageForm) && fe.pageForm[fe.pageFormIdx].CanEditAsText() {
 			fe.pageForm[fe.pageFormIdx].SaveTextInput(val)
 		}
 	case feTabNav:
@@ -573,10 +613,14 @@ func (fe FrontendEditor) tryEnterInsert() (FrontendEditor, tea.Cmd) {
 		n = len(fe.techFields)
 	case feTabTheme:
 		n = len(fe.themeFields)
-	case feTabPages:
-		if fe.inPageComp && fe.compSubView == ceViewForm {
+	case feTabComponents:
+		if fe.inCompAction && fe.actionSubView == ceViewForm {
+			n = len(fe.actionForm)
+		} else if fe.compSubView == ceViewForm {
 			n = len(fe.compForm)
-		} else if fe.pageSubView == ceViewForm {
+		}
+	case feTabPages:
+		if fe.pageSubView == ceViewForm {
 			n = len(fe.pageForm)
 		}
 	case feTabNav:
@@ -601,10 +645,14 @@ func (fe FrontendEditor) tryEnterInsert() (FrontendEditor, tea.Cmd) {
 			if fe.themeFormIdx < len(fe.themeFields) {
 				f = &fe.themeFields[fe.themeFormIdx]
 			}
-		case feTabPages:
-			if fe.inPageComp && fe.compSubView == ceViewForm && fe.compFormIdx < len(fe.compForm) {
+		case feTabComponents:
+			if fe.inCompAction && fe.actionSubView == ceViewForm && fe.actionFormIdx < len(fe.actionForm) {
+				f = &fe.actionForm[fe.actionFormIdx]
+			} else if fe.compSubView == ceViewForm && fe.compFormIdx < len(fe.compForm) {
 				f = &fe.compForm[fe.compFormIdx]
-			} else if fe.pageSubView == ceViewForm && fe.pageFormIdx < len(fe.pageForm) {
+			}
+		case feTabPages:
+			if fe.pageSubView == ceViewForm && fe.pageFormIdx < len(fe.pageForm) {
 				f = &fe.pageForm[fe.pageFormIdx]
 			}
 		case feTabNav:

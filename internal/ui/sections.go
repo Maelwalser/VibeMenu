@@ -24,6 +24,7 @@ type Field struct {
 	SelectedIdxs []int    // KindMultiSelect: indices of selected options
 	DDCursor     int      // KindMultiSelect: dropdown cursor position
 	CustomText   string   // KindSelect: free-text value when "Custom"/"Other" is selected
+	ColorSwatch  bool     // KindMultiSelect: options are hex colors; render colored swatches in dropdown
 }
 
 // isCustomOption returns true for sentinel options that allow free-text entry.
@@ -193,9 +194,18 @@ type Section struct {
 	Fields []Field
 }
 
-// initSections returns the 6 main tab section definitions.
+// initSections returns the main tab section definitions.
 func initSections() []Section {
 	return []Section{
+		{
+			ID:    "describe",
+			Abbr:  "✦ DESCRIBE",
+			Title: "Describe",
+			Desc:  "Describe your project in natural language.",
+			Fields: []Field{
+				{Key: "_describe", Kind: KindDataModel},
+			},
+		},
 		{
 			ID:    "backend",
 			Abbr:  "⚡ BACKEND",

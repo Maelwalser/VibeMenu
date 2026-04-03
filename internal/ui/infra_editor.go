@@ -6,208 +6,13 @@ import (
 	"github.com/vibe-menu/internal/manifest"
 )
 
-// ── sub-tabs ──────────────────────────────────────────────────────────────────
-
-type infraTabIdx int
-
-const (
-	infraTabNetworking infraTabIdx = iota
-	infraTabCICD
-	infraTabObservability
-	infraTabEnvironments
-)
-
-var infraTabLabels = []string{"NETWORKING", "CI/CD", "OBSERVABILITY", "ENVIRONMENTS"}
-
-// ── mode ──────────────────────────────────────────────────────────────────────
-
-type infraMode int
+// envView is the sub-view state for the Environments list+form.
+type envView int
 
 const (
-	infraNormal infraMode = iota
-	infraInsert
+	envViewList envView = iota
+	envViewForm
 )
-
-// ── field definitions ─────────────────────────────────────────────────────────
-
-func defaultNetworkingFields() []Field {
-	return []Field{
-		{
-			Key: "dns_provider", Label: "dns_provider  ", Kind: KindSelect,
-			Options: []string{"Cloudflare", "Route53", "Cloud DNS", "Other"},
-			Value:   "Cloudflare",
-		},
-		{
-			Key: "tls_ssl", Label: "tls_ssl       ", Kind: KindSelect,
-			Options: []string{"Let's Encrypt", "Cloudflare", "ACM", "Manual", "None (dev)"},
-			Value:   "Let's Encrypt",
-		},
-		{
-			Key: "reverse_proxy", Label: "reverse_proxy ", Kind: KindSelect,
-			Options: []string{"Nginx", "Caddy", "Traefik", "Cloudflare Tunnel", "Cloud LB"},
-			Value:   "Caddy", SelIdx: 1,
-		},
-		{
-			Key: "cdn", Label: "cdn           ", Kind: KindSelect,
-			Options: []string{"Cloudflare", "CloudFront", "Fastly", "Vercel Edge", "None"},
-			Value:   "None", SelIdx: 4,
-		},
-		{Key: "primary_domain", Label: "Primary Domain", Kind: KindText},
-		{
-			Key: "domain_strategy", Label: "Domain Strat. ", Kind: KindSelect,
-			Options: []string{"Subdomain per service", "Path-based routing", "Single domain", "Custom"},
-			Value:   "Single domain", SelIdx: 2,
-		},
-		{
-			Key: "cors_infra", Label: "CORS Enforced ", Kind: KindSelect,
-			Options: []string{"Reverse proxy (Nginx/Caddy)", "Application-level", "CDN/WAF", "Both"},
-			Value:   "Application-level", SelIdx: 1,
-		},
-		{
-			Key: "ssl_cert", Label: "SSL Cert Mgmt ", Kind: KindSelect,
-			Options: []string{"Auto-renew (certbot/ACME)", "Managed (cloud provider)", "Manual", "Cloudflare proxy"},
-			Value:   "Auto-renew (certbot/ACME)",
-		},
-	}
-}
-
-func defaultInfraCICDFields() []Field {
-	return []Field{
-		{
-			Key: "platform", Label: "platform      ", Kind: KindSelect,
-			Options: []string{
-				"GitHub Actions", "GitLab CI", "Jenkins",
-				"CircleCI", "ArgoCD", "Tekton",
-			},
-			Value: "GitHub Actions",
-		},
-		{
-			Key: "registry", Label: "registry      ", Kind: KindSelect,
-			Options: []string{"Docker Hub", "GHCR", "ECR", "GCR", "Self-hosted"},
-			Value:   "GHCR", SelIdx: 1,
-		},
-		{
-			Key: "deploy_strategy", Label: "deploy_strat  ", Kind: KindSelect,
-			Options: []string{"Rolling", "Blue-green", "Canary", "Recreate"},
-			Value:   "Rolling",
-		},
-		{
-			Key: "iac_tool", Label: "iac_tool      ", Kind: KindSelect,
-			Options: []string{"Terraform", "Pulumi", "CloudFormation", "Ansible", "None"},
-			Value:   "Terraform",
-		},
-		{
-			Key: "secrets_mgmt", Label: "secrets_mgmt  ", Kind: KindSelect,
-			Options: []string{
-				"GitHub Secrets", "HashiCorp Vault", "AWS Secrets Manager",
-				"GCP Secret Manager", "None",
-			},
-			Value: "GitHub Secrets",
-		},
-		{
-			Key: "container_runtime", Label: "Container     ", Kind: KindSelect,
-			Options: []string{"Node Alpine", "Go scratch", "Python slim", "Distroless", "Ubuntu", "Custom"},
-			Value:   "Go scratch", SelIdx: 1,
-		},
-		{
-			Key: "backup_dr", Label: "Backup/DR     ", Kind: KindSelect,
-			Options: []string{"Cross-region replication", "Daily snapshots", "Managed provider DR", "None"},
-			Value:   "None", SelIdx: 3,
-		},
-	}
-}
-
-func defaultEnvTopologyFields() []Field {
-	return []Field{
-		{
-			Key: "stages", Label: "stages        ", Kind: KindSelect,
-			Options: []string{
-				"dev + prod", "dev + staging + prod",
-				"dev + qa + staging + prod", "dev + staging + qa + preview + prod", "Custom",
-			},
-			Value: "dev + staging + prod", SelIdx: 1,
-		},
-		{
-			Key: "promotion_pipeline", Label: "promotion     ", Kind: KindSelect,
-			Options: []string{
-				"Dev → Staging → Prod", "Dev → QA → Staging → Prod",
-				"Dev → Prod (direct)", "Manual", "None",
-			},
-			Value: "Dev → Staging → Prod",
-		},
-		{
-			Key: "secret_key_strategy", Label: "secret_keys   ", Kind: KindSelect,
-			Options: []string{"Per-environment", "Shared base + overrides", "Fully shared", "None"},
-			Value:   "Per-environment",
-		},
-		{
-			Key: "migration_strategy", Label: "db_migrations ", Kind: KindSelect,
-			Options: []string{
-				"Auto on deploy", "Manual CI step", "Flyway", "Liquibase",
-				"Atlas", "golang-migrate", "None",
-			},
-			Value: "Manual CI step", SelIdx: 1,
-		},
-		{
-			Key: "db_seeding", Label: "db_seeding    ", Kind: KindSelect,
-			Options: []string{"Automatic (fixtures)", "Manual", "None"},
-			Value:   "None", SelIdx: 2,
-		},
-		{
-			Key: "preview_envs", Label: "preview_envs  ", Kind: KindSelect,
-			Options: []string{"false", "true"}, Value: "false",
-		},
-	}
-}
-
-func defaultObservabilityFields() []Field {
-	return []Field{
-		{
-			Key: "logging", Label: "logging       ", Kind: KindSelect,
-			Options: []string{
-				"Loki + Grafana", "ELK Stack", "CloudWatch",
-				"Datadog", "Stdout/file",
-			},
-			Value: "Loki + Grafana",
-		},
-		{
-			Key: "metrics", Label: "metrics       ", Kind: KindSelect,
-			Options: []string{
-				"Prometheus + Grafana", "Datadog", "CloudWatch", "New Relic", "None",
-			},
-			Value: "Prometheus + Grafana",
-		},
-		{
-			Key: "tracing", Label: "tracing       ", Kind: KindSelect,
-			Options: []string{
-				"OpenTelemetry + Jaeger", "OpenTelemetry + Tempo", "Datadog APM", "None",
-			},
-			Value: "OpenTelemetry + Jaeger",
-		},
-		{
-			Key: "error_tracking", Label: "error_tracking", Kind: KindSelect,
-			Options: []string{"Sentry", "Datadog", "Rollbar", "Built-in", "None"},
-			Value:   "Sentry",
-		},
-		{
-			Key: "health_checks", Label: "health_checks ", Kind: KindSelect,
-			Options: []string{"false", "true"}, Value: "true", SelIdx: 1,
-		},
-		{
-			Key: "alerting", Label: "alerting      ", Kind: KindSelect,
-			Options: []string{
-				"Grafana Alerting", "PagerDuty", "OpsGenie",
-				"CloudWatch Alarms", "None",
-			},
-			Value: "Grafana Alerting",
-		},
-		{
-			Key: "log_retention", Label: "Log Retention ", Kind: KindSelect,
-			Options: []string{"7 days", "30 days", "90 days", "1 year", "Indefinite"},
-			Value:   "30 days", SelIdx: 1,
-		},
-	}
-}
 
 // ── InfraEditor ───────────────────────────────────────────────────────────────
 
@@ -227,19 +32,29 @@ type InfraEditor struct {
 	obsFormIdx int
 	obsEnabled bool
 
-	envTopoFields  []Field
-	envTopoFormIdx int
-	envEnabled     bool
+	// Environments list+form (replaces the old flat env-topology form).
+	envs      []manifest.ServerEnvironmentDef
+	envIdx    int
+	envView   envView
+	envForm   []Field
+	envFormIdx int
 
-	internalMode infraMode
+	internalMode Mode
 	formInput    textinput.Model
 	width        int
 
 	// Vim motion state
 	nav VimNav
 
-	ddOpen   bool
-	ddOptIdx int
+	dd DropdownState
+
+	// backendLanguages mirrors the languages from the backend services/monolith
+	// so that container_runtime options reflect what is actually being built.
+	backendLanguages string // joined with "," for cheap equality checks
+
+	// cloudProvider caches the last provider used to narrow networking/cicd/obs
+	// option lists, to avoid redundant field-slice rebuilds.
+	cloudProvider string
 }
 
 func (ie InfraEditor) activeTabEnabled() bool {
@@ -251,7 +66,7 @@ func (ie InfraEditor) activeTabEnabled() bool {
 	case infraTabObservability:
 		return ie.obsEnabled
 	case infraTabEnvironments:
-		return ie.envEnabled
+		return true // environments list is always accessible
 	}
 	return false
 }
@@ -267,9 +82,6 @@ func (ie *InfraEditor) enableActiveTab() {
 	case infraTabObservability:
 		ie.obsEnabled = true
 		ie.obsFormIdx = 0
-	case infraTabEnvironments:
-		ie.envEnabled = true
-		ie.envTopoFormIdx = 0
 	}
 }
 
@@ -287,10 +99,6 @@ func (ie *InfraEditor) disableActiveTab() {
 		ie.obsEnabled = false
 		ie.obsFields = defaultObservabilityFields()
 		ie.obsFormIdx = 0
-	case infraTabEnvironments:
-		ie.envEnabled = false
-		ie.envTopoFields = defaultEnvTopologyFields()
-		ie.envTopoFormIdx = 0
 	}
 }
 
@@ -299,9 +107,42 @@ func newInfraEditor() InfraEditor {
 		networkingFields: defaultNetworkingFields(),
 		cicdFields:       defaultInfraCICDFields(),
 		obsFields:        defaultObservabilityFields(),
-		envTopoFields:    defaultEnvTopologyFields(),
 		formInput:        newFormInput(),
 	}
+}
+
+// EnvironmentNames returns the names of all configured server environments.
+// Used by backend and data editors to populate environment selector dropdowns.
+func (ie InfraEditor) EnvironmentNames() []string {
+	names := make([]string, 0, len(ie.envs))
+	for _, e := range ie.envs {
+		if e.Name != "" {
+			names = append(names, e.Name)
+		}
+	}
+	return names
+}
+
+// PrimaryOrchestrator returns the orchestrator of the first configured environment,
+// or an empty string when no environments have been defined yet.
+func (ie InfraEditor) PrimaryOrchestrator() string {
+	for _, e := range ie.envs {
+		if e.Orchestrator != "" {
+			return e.Orchestrator
+		}
+	}
+	return ""
+}
+
+// primaryCloudProvider returns the cloud_provider of the first environment for
+// narrowing networking/cicd/obs option lists.
+func (ie InfraEditor) primaryCloudProvider() string {
+	for _, e := range ie.envs {
+		if e.CloudProvider != "" {
+			return e.CloudProvider
+		}
+	}
+	return ""
 }
 
 // ── ToManifest ────────────────────────────────────────────────────────────────
@@ -342,16 +183,7 @@ func (ie InfraEditor) ToManifestInfraPillar() manifest.InfraPillar {
 			LogRetention:  fieldGet(ie.obsFields, "log_retention"),
 		}
 	}
-	if ie.envEnabled {
-		p.EnvTopology = manifest.EnvTopologyConfig{
-			Stages:            fieldGet(ie.envTopoFields, "stages"),
-			PromotionPipeline: fieldGet(ie.envTopoFields, "promotion_pipeline"),
-			SecretKeyStrategy: fieldGet(ie.envTopoFields, "secret_key_strategy"),
-			MigrationStrategy: fieldGet(ie.envTopoFields, "migration_strategy"),
-			DBSeeding:         fieldGet(ie.envTopoFields, "db_seeding"),
-			PreviewEnvs:       fieldGet(ie.envTopoFields, "preview_envs"),
-		}
-	}
+	p.Environments = ie.envs
 	return p
 }
 
@@ -401,15 +233,10 @@ func (ie InfraEditor) FromInfraPillar(ip manifest.InfraPillar) InfraEditor {
 		ie.obsFields = setFieldValue(ie.obsFields, "log_retention", o.LogRetention)
 	}
 
-	e := ip.EnvTopology
-	if e.Stages != "" || e.PromotionPipeline != "" {
-		ie.envEnabled = true
-		ie.envTopoFields = setFieldValue(ie.envTopoFields, "stages", e.Stages)
-		ie.envTopoFields = setFieldValue(ie.envTopoFields, "promotion_pipeline", e.PromotionPipeline)
-		ie.envTopoFields = setFieldValue(ie.envTopoFields, "secret_key_strategy", e.SecretKeyStrategy)
-		ie.envTopoFields = setFieldValue(ie.envTopoFields, "migration_strategy", e.MigrationStrategy)
-		ie.envTopoFields = setFieldValue(ie.envTopoFields, "db_seeding", e.DBSeeding)
-		ie.envTopoFields = setFieldValue(ie.envTopoFields, "preview_envs", e.PreviewEnvs)
+	if len(ip.Environments) > 0 {
+		ie.envs = ip.Environments
+		ie.envIdx = 0
+		ie.envView = envViewList
 	}
 
 	return ie
@@ -418,19 +245,27 @@ func (ie InfraEditor) FromInfraPillar(ip manifest.InfraPillar) InfraEditor {
 // ── Mode / HintLine ───────────────────────────────────────────────────────────
 
 func (ie InfraEditor) Mode() Mode {
-	if ie.internalMode == infraInsert {
+	if ie.internalMode == ModeInsert {
 		return ModeInsert
 	}
 	return ModeNormal
 }
 
 func (ie InfraEditor) HintLine() string {
-	if ie.internalMode == infraInsert {
+	if ie.internalMode == ModeInsert {
 		return StyleInsertMode.Render(" -- INSERT -- ") +
 			StyleHelpDesc.Render("  Esc: normal  Tab: next field")
 	}
-	if ie.ddOpen {
+	if ie.dd.Open {
 		return hintBar("j/k", "navigate", "Enter/Space", "select", "Esc", "cancel")
+	}
+	if ie.activeTab == infraTabEnvironments {
+		switch ie.envView {
+		case envViewForm:
+			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "H", "cycle back", "b/Esc", "save & back", "h/l", "sub-tab")
+		default:
+			return hintBar("j/k", "navigate", "a", "add env", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
+		}
 	}
 	if !ie.activeTabEnabled() {
 		return hintBar("a", "configure", "h/l", "sub-tab")
@@ -446,7 +281,7 @@ func (ie InfraEditor) Update(msg tea.Msg) (InfraEditor, tea.Cmd) {
 		ie.formInput.Width = wsz.Width - 22
 		return ie, nil
 	}
-	if ie.internalMode == infraInsert {
+	if ie.internalMode == ModeInsert {
 		return ie.updateInsert(msg)
 	}
 
@@ -455,7 +290,7 @@ func (ie InfraEditor) Update(msg tea.Msg) (InfraEditor, tea.Cmd) {
 		return ie, nil
 	}
 
-	if ie.ddOpen {
+	if ie.dd.Open {
 		return ie.updateInfraDropdown(key)
 	}
 
@@ -473,7 +308,7 @@ func (ie InfraEditor) Update(msg tea.Msg) (InfraEditor, tea.Cmd) {
 	case infraTabObservability:
 		return ie.updateFields(key)
 	case infraTabEnvironments:
-		return ie.updateFields(key)
+		return ie.updateEnvTab(key)
 	}
 	return ie, nil
 }
@@ -494,8 +329,6 @@ func (ie InfraEditor) updateFields(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
 		fields, idx = ie.cicdFields, ie.cicdFormIdx
 	case infraTabObservability:
 		fields, idx = ie.obsFields, ie.obsFormIdx
-	case infraTabEnvironments:
-		fields, idx = ie.envTopoFields, ie.envTopoFormIdx
 	default:
 		return ie, nil
 	}
@@ -511,8 +344,8 @@ func (ie InfraEditor) updateFields(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
 			if idx < n {
 				f := &fields[idx]
 				if f.Kind == KindSelect {
-					ie.ddOpen = true
-					ie.ddOptIdx = f.SelIdx
+					ie.dd.Open = true
+					ie.dd.OptIdx = f.SelIdx
 				} else {
 					switch ie.activeTab {
 					case infraTabNetworking:
@@ -524,9 +357,6 @@ func (ie InfraEditor) updateFields(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
 					case infraTabObservability:
 						ie.obsFields = fields
 						ie.obsFormIdx = idx
-					case infraTabEnvironments:
-						ie.envTopoFields = fields
-						ie.envTopoFormIdx = idx
 					}
 					return ie.tryEnterInsert()
 				}
@@ -552,9 +382,6 @@ func (ie InfraEditor) updateFields(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
 			case infraTabObservability:
 				ie.obsFields = fields
 				ie.obsFormIdx = idx
-			case infraTabEnvironments:
-				ie.envTopoFields = fields
-				ie.envTopoFormIdx = idx
 			}
 			return ie.tryEnterInsert()
 		}
@@ -570,9 +397,6 @@ func (ie InfraEditor) updateFields(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
 	case infraTabObservability:
 		ie.obsFields = fields
 		ie.obsFormIdx = idx
-	case infraTabEnvironments:
-		ie.envTopoFields = fields
-		ie.envTopoFormIdx = idx
 	}
 	return ie, nil
 }
@@ -592,35 +416,24 @@ func (ie InfraEditor) updateInfraDropdown(key tea.KeyMsg) (InfraEditor, tea.Cmd)
 		if ie.obsFormIdx < len(ie.obsFields) {
 			f = &ie.obsFields[ie.obsFormIdx]
 		}
-	case infraTabEnvironments:
-		if ie.envTopoFormIdx < len(ie.envTopoFields) {
-			f = &ie.envTopoFields[ie.envTopoFormIdx]
-		}
 	}
 	if f == nil {
-		ie.ddOpen = false
+		ie.dd.Open = false
 		return ie, nil
 	}
+	ie.dd.OptIdx = NavigateDropdown(key.String(), ie.dd.OptIdx, len(f.Options))
 	switch key.String() {
-	case "j", "down":
-		if ie.ddOptIdx < len(f.Options)-1 {
-			ie.ddOptIdx++
-		}
-	case "k", "up":
-		if ie.ddOptIdx > 0 {
-			ie.ddOptIdx--
-		}
 	case " ", "enter":
-		f.SelIdx = ie.ddOptIdx
-		if ie.ddOptIdx < len(f.Options) {
-			f.Value = f.Options[ie.ddOptIdx]
+		f.SelIdx = ie.dd.OptIdx
+		if ie.dd.OptIdx < len(f.Options) {
+			f.Value = f.Options[ie.dd.OptIdx]
 		}
-		ie.ddOpen = false
+		ie.dd.Open = false
 		if f.PrepareCustomEntry() {
 			return ie.tryEnterInsert()
 		}
 	case "esc", "b":
-		ie.ddOpen = false
+		ie.dd.Open = false
 	}
 	return ie, nil
 }
@@ -631,7 +444,7 @@ func (ie InfraEditor) updateInsert(msg tea.Msg) (InfraEditor, tea.Cmd) {
 		switch key.String() {
 		case "esc":
 			ie.saveInput()
-			ie.internalMode = infraNormal
+			ie.internalMode = ModeNormal
 			ie.formInput.Blur()
 			return ie, nil
 		case "tab":
@@ -667,9 +480,9 @@ func (ie *InfraEditor) advanceField(delta int) {
 			ie.obsFormIdx = (ie.obsFormIdx + delta + n) % n
 		}
 	case infraTabEnvironments:
-		n := len(ie.envTopoFields)
+		n := len(ie.envForm)
 		if n > 0 {
-			ie.envTopoFormIdx = (ie.envTopoFormIdx + delta + n) % n
+			ie.envFormIdx = (ie.envFormIdx + delta + n) % n
 		}
 	}
 }
@@ -690,8 +503,8 @@ func (ie *InfraEditor) saveInput() {
 			ie.obsFields[ie.obsFormIdx].SaveTextInput(val)
 		}
 	case infraTabEnvironments:
-		if ie.envTopoFormIdx < len(ie.envTopoFields) && ie.envTopoFields[ie.envTopoFormIdx].CanEditAsText() {
-			ie.envTopoFields[ie.envTopoFormIdx].SaveTextInput(val)
+		if ie.envFormIdx < len(ie.envForm) && ie.envForm[ie.envFormIdx].CanEditAsText() {
+			ie.envForm[ie.envFormIdx].SaveTextInput(val)
 		}
 	}
 }
@@ -706,7 +519,7 @@ func (ie InfraEditor) tryEnterInsert() (InfraEditor, tea.Cmd) {
 	case infraTabObservability:
 		n = len(ie.obsFields)
 	case infraTabEnvironments:
-		n = len(ie.envTopoFields)
+		n = len(ie.envForm)
 	}
 	for range n {
 		var f *Field
@@ -724,15 +537,15 @@ func (ie InfraEditor) tryEnterInsert() (InfraEditor, tea.Cmd) {
 				f = &ie.obsFields[ie.obsFormIdx]
 			}
 		case infraTabEnvironments:
-			if ie.envTopoFormIdx < len(ie.envTopoFields) {
-				f = &ie.envTopoFields[ie.envTopoFormIdx]
+			if ie.envFormIdx < len(ie.envForm) {
+				f = &ie.envForm[ie.envFormIdx]
 			}
 		}
 		if f == nil {
 			break
 		}
 		if f.CanEditAsText() {
-			ie.internalMode = infraInsert
+			ie.internalMode = ModeInsert
 			ie.formInput.SetValue(f.TextInputValue())
 			ie.formInput.Width = ie.width - 22
 			ie.formInput.CursorEnd()
@@ -759,29 +572,254 @@ func (ie InfraEditor) View(w, h int) string {
 	switch ie.activeTab {
 	case infraTabNetworking:
 		if ie.netEnabled {
-			lines = append(lines, renderFormFields(w, ie.networkingFields, ie.netFormIdx, ie.internalMode == infraInsert, ie.formInput, ie.ddOpen, ie.ddOptIdx)...)
+			lines = append(lines, renderFormFields(w, ie.networkingFields, ie.netFormIdx, ie.internalMode == ModeInsert, ie.formInput, ie.dd.Open, ie.dd.OptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case infraTabCICD:
 		if ie.cicdEnabled {
-			lines = append(lines, renderFormFields(w, ie.cicdFields, ie.cicdFormIdx, ie.internalMode == infraInsert, ie.formInput, ie.ddOpen, ie.ddOptIdx)...)
+			lines = append(lines, renderFormFields(w, ie.cicdFields, ie.cicdFormIdx, ie.internalMode == ModeInsert, ie.formInput, ie.dd.Open, ie.dd.OptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case infraTabObservability:
 		if ie.obsEnabled {
-			lines = append(lines, renderFormFields(w, ie.obsFields, ie.obsFormIdx, ie.internalMode == infraInsert, ie.formInput, ie.ddOpen, ie.ddOptIdx)...)
+			lines = append(lines, renderFormFields(w, ie.obsFields, ie.obsFormIdx, ie.internalMode == ModeInsert, ie.formInput, ie.dd.Open, ie.dd.OptIdx)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case infraTabEnvironments:
-		if ie.envEnabled {
-			lines = append(lines, renderFormFields(w, ie.envTopoFields, ie.envTopoFormIdx, ie.internalMode == infraInsert, ie.formInput, ie.ddOpen, ie.ddOptIdx)...)
-		} else {
-			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
-		}
+		lines = append(lines, ie.viewEnvTab(w)...)
 	}
 
 	return fillTildes(lines, h)
+}
+
+// ── Environments list+form ────────────────────────────────────────────────────
+
+func (ie InfraEditor) updateEnvTab(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
+	switch ie.envView {
+	case envViewList:
+		return ie.updateEnvList(key)
+	case envViewForm:
+		return ie.updateEnvForm(key)
+	}
+	return ie, nil
+}
+
+func (ie InfraEditor) updateEnvList(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
+	n := len(ie.envs)
+	switch key.String() {
+	case "j", "down":
+		if n > 0 && ie.envIdx < n-1 {
+			ie.envIdx++
+		}
+	case "k", "up":
+		if ie.envIdx > 0 {
+			ie.envIdx--
+		}
+	case "a":
+		existing := make([]string, 0, len(ie.envs))
+		for _, e := range ie.envs {
+			existing = append(existing, e.Name)
+		}
+		newDef := manifest.ServerEnvironmentDef{
+			Name:          uniqueName("environment", existing),
+			ComputeEnv:    "Containers (Docker)",
+			CloudProvider: "AWS",
+			Orchestrator:  "Docker Compose",
+		}
+		ie.envs = append(ie.envs, newDef)
+		ie.envIdx = len(ie.envs) - 1
+		ie.envForm = serverEnvFormFromDef(ie.envs[ie.envIdx])
+		ie.envFormIdx = 0
+		ie.envView = envViewForm
+		// apply compute_env narrowing to orchestrator options
+		ie.applyEnvOrchestratorOptions()
+		// propagate first env's cloud_provider to infra networking/cicd/obs
+		ie.SetCloudProvider(ie.primaryCloudProvider())
+	case "d":
+		if n > 0 {
+			ie.envs = append(ie.envs[:ie.envIdx], ie.envs[ie.envIdx+1:]...)
+			if ie.envIdx > 0 && ie.envIdx >= len(ie.envs) {
+				ie.envIdx = len(ie.envs) - 1
+			}
+		}
+	case "enter", "l", "right":
+		if n > 0 {
+			ie.envForm = serverEnvFormFromDef(ie.envs[ie.envIdx])
+			ie.envFormIdx = 0
+			ie.envView = envViewForm
+			ie.applyEnvOrchestratorOptions()
+		}
+	}
+	return ie, nil
+}
+
+func (ie InfraEditor) updateEnvForm(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
+	if ie.dd.Open {
+		return ie.updateEnvFormDropdown(key)
+	}
+	n := len(ie.envForm)
+	switch key.String() {
+	case "j", "down":
+		if n > 0 {
+			ie.envFormIdx = (ie.envFormIdx + 1) % n
+		}
+	case "k", "up":
+		if n > 0 {
+			ie.envFormIdx = (ie.envFormIdx - 1 + n) % n
+		}
+	case "enter", " ":
+		if ie.envFormIdx < n {
+			f := &ie.envForm[ie.envFormIdx]
+			if f.Kind == KindSelect || f.Kind == KindMultiSelect {
+				ie.dd.Open = true
+				ie.dd.OptIdx = f.SelIdx
+			} else {
+				return ie.tryEnterInsert()
+			}
+		}
+	case "H", "shift+left":
+		if ie.envFormIdx < n {
+			f := &ie.envForm[ie.envFormIdx]
+			if f.Kind == KindSelect {
+				f.CyclePrev()
+				ie.onEnvFormFieldChanged(f.Key)
+			}
+		}
+	case "i", "a":
+		if ie.envFormIdx < n && ie.envForm[ie.envFormIdx].CanEditAsText() {
+			return ie.tryEnterInsert()
+		}
+	case "b", "esc":
+		ie.saveEnvForm()
+		ie.envView = envViewList
+	}
+	return ie, nil
+}
+
+func (ie InfraEditor) updateEnvFormDropdown(key tea.KeyMsg) (InfraEditor, tea.Cmd) {
+	if ie.envFormIdx >= len(ie.envForm) {
+		ie.dd.Open = false
+		return ie, nil
+	}
+	f := &ie.envForm[ie.envFormIdx]
+	ie.dd.OptIdx = NavigateDropdown(key.String(), ie.dd.OptIdx, len(f.Options))
+	switch key.String() {
+	case " ", "enter":
+		if f.Kind == KindMultiSelect {
+			f.ToggleMultiSelect(ie.dd.OptIdx)
+			f.DDCursor = ie.dd.OptIdx
+		} else {
+			f.SelIdx = ie.dd.OptIdx
+			if ie.dd.OptIdx < len(f.Options) {
+				f.Value = f.Options[ie.dd.OptIdx]
+			}
+			ie.dd.Open = false
+			ie.onEnvFormFieldChanged(f.Key)
+			if f.PrepareCustomEntry() {
+				return ie.tryEnterInsert()
+			}
+		}
+	case "esc", "b":
+		ie.dd.Open = false
+	}
+	return ie, nil
+}
+
+// onEnvFormFieldChanged reacts to a field value change inside the env form.
+func (ie *InfraEditor) onEnvFormFieldChanged(key string) {
+	switch key {
+	case "compute_env":
+		ie.applyEnvOrchestratorOptions()
+	case "cloud_provider":
+		ie.SetCloudProvider(ie.primaryCloudProvider())
+	}
+}
+
+// applyEnvOrchestratorOptions narrows orchestrator options in envForm
+// based on the current compute_env selection.
+func (ie *InfraEditor) applyEnvOrchestratorOptions() {
+	computeEnv := fieldGet(ie.envForm, "compute_env")
+	opts := narrowOrchestratorOptions(computeEnv)
+	for i := range ie.envForm {
+		if ie.envForm[i].Key != "orchestrator" {
+			continue
+		}
+		ie.envForm[i].Options = opts
+		found := false
+		for j, o := range opts {
+			if o == ie.envForm[i].Value {
+				ie.envForm[i].SelIdx = j
+				found = true
+				break
+			}
+		}
+		if !found && len(opts) > 0 {
+			ie.envForm[i].Value = opts[0]
+			ie.envForm[i].SelIdx = 0
+		}
+		break
+	}
+}
+
+// saveEnvForm writes the current envForm back to ie.envs[ie.envIdx].
+func (ie *InfraEditor) saveEnvForm() {
+	if ie.envIdx >= len(ie.envs) {
+		return
+	}
+	ie.envs[ie.envIdx] = serverEnvDefFromForm(ie.envForm)
+	// Keep networking/cicd/obs options in sync with primary env's settings.
+	ie.SetCloudProvider(ie.primaryCloudProvider())
+	ie.applyOrchestratorToCICD(ie.PrimaryOrchestrator())
+}
+
+func (ie InfraEditor) viewEnvTab(w int) []string {
+	switch ie.envView {
+	case envViewForm:
+		return ie.viewEnvForm(w)
+	default:
+		return ie.viewEnvList(w)
+	}
+}
+
+func (ie InfraEditor) viewEnvList(w int) []string {
+	var lines []string
+	lines = append(lines, StyleSectionDesc.Render("  server environments — define deployment targets (dev, staging, prod)"))
+	lines = append(lines, "")
+	if len(ie.envs) == 0 {
+		lines = append(lines, StyleSectionDesc.Render("  (no environments — press 'a' to add one)"))
+		return lines
+	}
+	for i, e := range ie.envs {
+		cursor := "  "
+		style := StyleFieldKey
+		if i == ie.envIdx {
+			cursor = StyleCursor.Render("▶ ")
+			style = StyleFieldKeyActive
+		}
+		summary := e.Name
+		if e.CloudProvider != "" {
+			summary += "  " + StyleHelpDesc.Render(e.CloudProvider)
+		}
+		if e.ComputeEnv != "" {
+			summary += "  " + StyleHelpDesc.Render(e.ComputeEnv)
+		}
+		if e.Orchestrator != "" {
+			summary += "  " + StyleHelpDesc.Render(e.Orchestrator)
+		}
+		lines = append(lines, cursor+style.Render(summary))
+	}
+	return lines
+}
+
+func (ie InfraEditor) viewEnvForm(w int) []string {
+	if ie.envIdx >= len(ie.envs) {
+		return nil
+	}
+	header := StyleSectionDesc.Render("  editing environment: " + ie.envs[ie.envIdx].Name)
+	lines := []string{header, ""}
+	lines = append(lines, renderFormFields(w, ie.envForm, ie.envFormIdx, ie.internalMode == ModeInsert, ie.formInput, ie.dd.Open, ie.dd.OptIdx)...)
+	return lines
 }

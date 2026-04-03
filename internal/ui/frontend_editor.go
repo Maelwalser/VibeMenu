@@ -1,9 +1,6 @@
 package ui
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/vibe-menu/internal/manifest"
@@ -25,451 +22,6 @@ const (
 
 var feTabLabels = []string{"TECHNOLOGIES", "THEMING", "PAGES", "NAVIGATION", "I18N", "A11Y/SEO", "ASSETS"}
 
-// ── mode ──────────────────────────────────────────────────────────────────────
-
-type feMode int
-
-const (
-	feNormal feMode = iota
-	feInsert
-)
-
-// ── framework options per language/platform ───────────────────────────────────
-
-var frontendFrameworksByLang = map[string][]string{
-	"TypeScript": {"React", "Vue", "Svelte", "Angular", "Solid", "Qwik", "HTMX"},
-	"JavaScript": {"React", "Vue", "Svelte", "Angular", "Solid", "Qwik", "HTMX"},
-	"Dart":       {"Flutter"},
-	"Kotlin":     {"Jetpack Compose", "KMP (Compose Multiplatform)"},
-	"Swift":      {"SwiftUI", "UIKit"},
-}
-
-// ── compatibility maps ────────────────────────────────────────────────────────
-
-var frontendMetaframeworksByFramework = map[string][]string{
-	"React":                       {"Next.js", "Remix", "Astro", "None"},
-	"Vue":                         {"Nuxt", "Astro", "None"},
-	"Svelte":                      {"SvelteKit", "Astro", "None"},
-	"Angular":                     {"None"},
-	"Solid":                       {"Astro", "None"},
-	"Qwik":                        {"None"},
-	"HTMX":                        {"None"},
-	"Flutter":                     {"None"},
-	"Jetpack Compose":             {"None"},
-	"KMP (Compose Multiplatform)": {"None"},
-	"SwiftUI":                     {"None"},
-	"UIKit":                       {"None"},
-}
-
-var feComponentLibByFramework = map[string][]string{
-	"React":                       {"shadcn/ui", "Radix", "Material UI", "Ant Design", "Headless UI", "DaisyUI", "None", "Custom"},
-	"Vue":                         {"Material UI", "None", "Custom"},
-	"Angular":                     {"Material UI", "None", "Custom"},
-	"Svelte":                      {"None", "Custom"},
-	"Solid":                       {"None", "Custom"},
-	"Qwik":                        {"None", "Custom"},
-	"HTMX":                        {"None", "Custom"},
-	"Flutter":                     {"None", "Custom"},
-	"Jetpack Compose":             {"None", "Custom"},
-	"KMP (Compose Multiplatform)": {"None", "Custom"},
-	"SwiftUI":                     {"None", "Custom"},
-	"UIKit":                       {"None", "Custom"},
-}
-
-var feStateMgmtByFramework = map[string][]string{
-	"React":                       {"React Context", "Zustand", "Redux Toolkit", "Jotai", "None"},
-	"Vue":                         {"Pinia", "None"},
-	"Svelte":                      {"Svelte stores", "None"},
-	"Angular":                     {"Signals", "None"},
-	"Solid":                       {"Signals", "None"},
-	"Qwik":                        {"Signals", "None"},
-	"HTMX":                        {"None"},
-	"Flutter":                     {"None"},
-	"Jetpack Compose":             {"None"},
-	"KMP (Compose Multiplatform)": {"None"},
-	"SwiftUI":                     {"None"},
-	"UIKit":                       {"None"},
-}
-
-var feDataFetchingByFramework = map[string][]string{
-	"React":                       {"TanStack Query", "SWR", "Apollo Client", "tRPC client", "RTK Query", "Native fetch"},
-	"Vue":                         {"TanStack Query", "Apollo Client", "Native fetch"},
-	"Svelte":                      {"TanStack Query", "SWR", "Native fetch"},
-	"Angular":                     {"Apollo Client", "Native fetch"},
-	"Solid":                       {"TanStack Query", "Native fetch"},
-	"Qwik":                        {"Native fetch"},
-	"HTMX":                        {"Native fetch"},
-	"Flutter":                     {"Native fetch"},
-	"Jetpack Compose":             {"Native fetch"},
-	"KMP (Compose Multiplatform)": {"Native fetch"},
-	"SwiftUI":                     {"Native fetch"},
-	"UIKit":                       {"Native fetch"},
-}
-
-var feFormHandlingByFramework = map[string][]string{
-	"React":                       {"React Hook Form", "Formik", "Zod + native", "None"},
-	"Vue":                         {"Vee-Validate", "Zod + native", "None"},
-	"Svelte":                      {"Zod + native", "None"},
-	"Angular":                     {"Zod + native", "None"},
-	"Solid":                       {"Zod + native", "None"},
-	"Qwik":                        {"Zod + native", "None"},
-	"HTMX":                        {"None"},
-	"Flutter":                     {"None"},
-	"Jetpack Compose":             {"None"},
-	"KMP (Compose Multiplatform)": {"None"},
-	"SwiftUI":                     {"None"},
-	"UIKit":                       {"None"},
-}
-
-var feStylingByLanguage = map[string][]string{
-	"TypeScript": {"Tailwind CSS", "CSS Modules", "Styled Components", "Sass/SCSS", "Vanilla CSS", "UnoCSS"},
-	"JavaScript": {"Tailwind CSS", "CSS Modules", "Styled Components", "Sass/SCSS", "Vanilla CSS", "UnoCSS"},
-	"Dart":       {"None", "Custom"},
-	"Kotlin":     {"None", "Custom"},
-	"Swift":      {"None", "Custom"},
-}
-
-var feValidationByLanguage = map[string][]string{
-	"TypeScript": {"Zod", "Yup", "Valibot", "Joi", "Class-validator", "None"},
-	"JavaScript": {"Zod", "Yup", "Valibot", "Joi", "None"},
-	"Dart":       {"None"},
-	"Kotlin":     {"None"},
-	"Swift":      {"None"},
-}
-
-var fePkgManagerByLanguage = map[string][]string{
-	"TypeScript": {"npm", "yarn", "pnpm", "bun"},
-	"JavaScript": {"npm", "yarn", "pnpm", "bun"},
-	"Dart":       {"pub"},
-	"Kotlin":     {"Gradle"},
-	"Swift":      {"SwiftPM"},
-}
-
-var feErrorBoundaryByFramework = map[string][]string{
-	"React":                       {"React Error Boundary", "Global try-catch", "Framework default", "Custom"},
-	"Vue":                         {"Global try-catch", "Framework default", "Custom"},
-	"Angular":                     {"Global try-catch", "Framework default", "Custom"},
-	"Svelte":                      {"Global try-catch", "Framework default", "Custom"},
-	"Solid":                       {"Global try-catch", "Framework default", "Custom"},
-	"Qwik":                        {"Global try-catch", "Framework default", "Custom"},
-	"HTMX":                        {"Global try-catch", "Custom"},
-	"Flutter":                     {"Framework default", "Custom"},
-	"Jetpack Compose":             {"Framework default", "Custom"},
-	"KMP (Compose Multiplatform)": {"Framework default", "Custom"},
-	"SwiftUI":                     {"Framework default", "Custom"},
-	"UIKit":                       {"Framework default", "Custom"},
-}
-
-var feTestingByLanguage = map[string][]string{
-	"TypeScript": {"Vitest", "Jest", "Testing Library", "Storybook", "None"},
-	"JavaScript": {"Vitest", "Jest", "Testing Library", "Storybook", "None"},
-	"Dart":       {"None"},
-	"Kotlin":     {"None"},
-	"Swift":      {"None"},
-}
-
-var feLinterByLanguage = map[string][]string{
-	"TypeScript": {"ESLint + Prettier", "Biome", "oxlint", "Stylelint", "Custom", "None"},
-	"JavaScript": {"ESLint + Prettier", "Biome", "oxlint", "Stylelint", "Custom", "None"},
-	"Dart":       {"Custom", "None"},
-	"Kotlin":     {"Custom", "None"},
-	"Swift":      {"Custom", "None"},
-}
-
-var fePwaSupportByPlatform = map[string][]string{
-	"Web (SPA)":               {"None", "Basic (manifest + service worker)", "Full offline", "Push notifications"},
-	"Web (SSR/SSG)":           {"None", "Basic (manifest + service worker)", "Full offline", "Push notifications"},
-	"Mobile (cross-platform)": {"None"},
-	"Mobile (native)":         {"None"},
-	"Desktop":                 {"None"},
-}
-
-var feBundleOptByLanguage = map[string][]string{
-	"TypeScript": {"Code splitting (route-based)", "Dynamic imports", "Tree shaking only", "None"},
-	"JavaScript": {"Code splitting (route-based)", "Dynamic imports", "Tree shaking only", "None"},
-	"Dart":       {"None"},
-	"Kotlin":     {"None"},
-	"Swift":      {"None"},
-}
-
-var feImageOptByPlatform = map[string][]string{
-	"Web (SPA)":               {"Next/Image (built-in)", "Cloudinary", "Imgix", "Sharp (self-hosted)", "CDN transform", "None"},
-	"Web (SSR/SSG)":           {"Next/Image (built-in)", "Cloudinary", "Imgix", "Sharp (self-hosted)", "CDN transform", "None"},
-	"Mobile (cross-platform)": {"None"},
-	"Mobile (native)":         {"None"},
-	"Desktop":                 {"None"},
-}
-
-// ── field definitions ─────────────────────────────────────────────────────────
-
-func defaultFETechFields() []Field {
-	return []Field{
-		{
-			Key: "language", Label: "language      ", Kind: KindSelect,
-			Options: []string{"TypeScript", "JavaScript", "Dart", "Kotlin", "Swift"},
-			Value:   "TypeScript",
-		},
-		{
-			Key: "platform", Label: "platform      ", Kind: KindSelect,
-			Options: []string{
-				"Web (SPA)", "Web (SSR/SSG)", "Mobile (cross-platform)",
-				"Mobile (native)", "Desktop",
-			},
-			Value: "Web (SPA)",
-		},
-		{
-			Key: "framework", Label: "framework     ", Kind: KindSelect,
-			Options: frontendFrameworksByLang["TypeScript"],
-			Value:   "React",
-		},
-		{
-			Key: "meta_framework", Label: "meta_framework", Kind: KindSelect,
-			Options: frontendMetaframeworksByFramework["React"],
-			Value:   "None", SelIdx: 3,
-		},
-		{
-			Key: "pkg_manager", Label: "pkg_manager   ", Kind: KindSelect,
-			Options: []string{"npm", "yarn", "pnpm", "bun"},
-			Value:   "pnpm", SelIdx: 2,
-		},
-		{
-			Key: "styling", Label: "styling       ", Kind: KindSelect,
-			Options: []string{
-				"Tailwind CSS", "CSS Modules", "Styled Components",
-				"Sass/SCSS", "Vanilla CSS", "UnoCSS",
-			},
-			Value: "Tailwind CSS",
-		},
-		{
-			Key: "component_lib", Label: "component_lib ", Kind: KindSelect,
-			Options: []string{
-				"shadcn/ui", "Radix", "Material UI", "Ant Design",
-				"Headless UI", "DaisyUI", "None", "Custom",
-			},
-			Value: "shadcn/ui",
-		},
-		{
-			Key: "state_mgmt", Label: "state_mgmt    ", Kind: KindSelect,
-			Options: []string{
-				"React Context", "Zustand", "Redux Toolkit", "Jotai",
-				"Pinia", "Svelte stores", "Signals", "None",
-			},
-			Value: "Zustand", SelIdx: 1,
-		},
-		{
-			Key: "data_fetching", Label: "data_fetching ", Kind: KindSelect,
-			Options: []string{
-				"TanStack Query", "SWR", "Apollo Client",
-				"tRPC client", "RTK Query", "Native fetch",
-			},
-			Value: "TanStack Query",
-		},
-		{
-			Key: "form_handling", Label: "form_handling ", Kind: KindSelect,
-			Options: []string{"React Hook Form", "Formik", "Zod + native", "Vee-Validate", "None"},
-			Value:   "React Hook Form",
-		},
-		{
-			Key: "validation", Label: "validation    ", Kind: KindSelect,
-			Options: []string{"Zod", "Yup", "Valibot", "Joi", "Class-validator", "None"},
-			Value:   "Zod",
-		},
-		{
-			Key: "pwa_support", Label: "PWA Support   ", Kind: KindSelect,
-			Options: []string{"None", "Basic (manifest + service worker)", "Full offline", "Push notifications"},
-			Value:   "None",
-		},
-		{
-			Key: "realtime", Label: "Real-time     ", Kind: KindSelect,
-			Options: []string{"WebSocket", "SSE", "Polling", "None"},
-			Value:   "None", SelIdx: 3,
-		},
-		{
-			Key: "image_opt", Label: "Image Optim.  ", Kind: KindSelect,
-			Options: []string{"Next/Image (built-in)", "Cloudinary", "Imgix", "Sharp (self-hosted)", "CDN transform", "None"},
-			Value:   "None", SelIdx: 5,
-		},
-		{
-			Key: "auth_flow", Label: "Auth Flow     ", Kind: KindSelect,
-			Options: []string{"Redirect (OAuth/OIDC)", "Modal login", "Magic link", "Passwordless", "Social only"},
-			Value:   "Redirect (OAuth/OIDC)",
-		},
-		{
-			Key: "error_boundary", Label: "Error Boundary", Kind: KindSelect,
-			Options: []string{"React Error Boundary", "Global try-catch", "Framework default", "Custom"},
-			Value:   "Framework default", SelIdx: 2,
-		},
-		{
-			Key: "bundle_opt", Label: "Bundle Optim. ", Kind: KindSelect,
-			Options: []string{"Code splitting (route-based)", "Dynamic imports", "Tree shaking only", "None"},
-			Value:   "None", SelIdx: 3,
-		},
-		{
-			Key: "fe_testing", Label: "FE Testing    ", Kind: KindSelect,
-			Options: []string{"Vitest", "Jest", "Testing Library", "Storybook", "None"},
-			Value:   "None", SelIdx: 4,
-		},
-		{
-			Key: "fe_linter", Label: "Linter        ", Kind: KindSelect,
-			Options: []string{"ESLint + Prettier", "Biome", "oxlint", "Stylelint", "Custom", "None"},
-			Value:   "None", SelIdx: 5,
-		},
-	}
-}
-
-func defaultFEThemeFields() []Field {
-	return []Field{
-		{
-			Key: "dark_mode", Label: "dark_mode     ", Kind: KindSelect,
-			Options: []string{"None", "Toggle (user preference)", "System preference", "Dark only"},
-			Value:   "System preference", SelIdx: 2,
-		},
-		{
-			Key: "border_radius", Label: "border_radius ", Kind: KindSelect,
-			Options: []string{"Sharp (0)", "Subtle (4px)", "Rounded (8px)", "Pill (999px)", "Custom"},
-			Value:   "Rounded (8px)", SelIdx: 2,
-		},
-		{
-			Key: "spacing", Label: "spacing       ", Kind: KindSelect,
-			Options: []string{"Compact (4px base)", "Default (8px base)", "Spacious (12px base)"},
-			Value:   "Default (8px base)", SelIdx: 1,
-		},
-		{
-			Key: "elevation", Label: "elevation     ", Kind: KindSelect,
-			Options: []string{"Shadows", "Borders", "Both", "Flat"},
-			Value:   "Shadows",
-		},
-		{
-			Key: "motion", Label: "motion        ", Kind: KindSelect,
-			Options: []string{"None", "Subtle transitions", "Animated (spring/ease)"},
-			Value:   "Subtle transitions", SelIdx: 1,
-		},
-		{
-			Key: "vibe", Label: "vibe          ", Kind: KindSelect,
-			Options: []string{
-				"Professional", "Playful", "Minimal", "Bold",
-				"Elegant", "Technical", "Creative", "Friendly", "Serious", "Modern",
-			},
-			Value: "Professional",
-		},
-		{Key: "colors", Label: "colors        ", Kind: KindText},
-		{Key: "description", Label: "description   ", Kind: KindTextArea},
-	}
-}
-
-func defaultPageFormFields(authRoleOptions, pageRouteOptions []string) []Field {
-	return []Field{
-		{Key: "name", Label: "name          ", Kind: KindText},
-		{Key: "route", Label: "route         ", Kind: KindText},
-		{
-			Key: "auth_required", Label: "auth_required ", Kind: KindSelect,
-			Options: []string{"false", "true"}, Value: "false",
-		},
-		{
-			Key: "layout", Label: "layout        ", Kind: KindSelect,
-			Options: []string{"Default", "Sidebar", "Full-width", "Blank", "Custom (specify)"},
-			Value:   "Default",
-		},
-		{Key: "description", Label: "description   ", Kind: KindText},
-		{Key: "core_actions", Label: "core_actions  ", Kind: KindText},
-		{
-			Key: "loading", Label: "loading       ", Kind: KindSelect,
-			Options: []string{"Skeleton", "Spinner", "Progressive", "Instant (SSR/SSG)"},
-			Value:   "Skeleton",
-		},
-		{
-			Key: "error_handling", Label: "error_handling", Kind: KindSelect,
-			Options: []string{"Inline", "Toast", "Error boundary / fallback page", "Retry"},
-			Value:   "Toast", SelIdx: 1,
-		},
-		{
-			Key: "auth_roles", Label: "auth_roles    ", Kind: KindMultiSelect,
-			Options: authRoleOptions,
-			Value:   placeholderFor(authRoleOptions, "(no auth roles configured)"),
-		},
-		{
-			Key: "linked_pages", Label: "linked_pages  ", Kind: KindMultiSelect,
-			Options: pageRouteOptions,
-			Value:   placeholderFor(pageRouteOptions, "(no pages configured)"),
-		},
-	}
-}
-
-func defaultI18nFields() []Field {
-	return []Field{
-		{
-			Key: "enabled", Label: "enabled       ", Kind: KindSelect,
-			Options: []string{"false", "true"}, Value: "false",
-		},
-		{Key: "default_locale", Label: "default_locale", Kind: KindText, Value: "en"},
-		{Key: "supported_locales", Label: "locales       ", Kind: KindText, Value: "en"},
-		{
-			Key: "translation_strategy", Label: "i18n_library  ", Kind: KindSelect,
-			Options: []string{"i18next", "next-intl", "react-i18next", "LinguiJS", "vue-i18n", "Custom", "None"},
-			Value:   "None", SelIdx: 6,
-		},
-		{
-			Key: "timezone_handling", Label: "timezone      ", Kind: KindSelect,
-			Options: []string{"UTC always", "User preference", "Auto-detect", "Manual"},
-			Value:   "UTC always",
-		},
-	}
-}
-
-func defaultA11ySEOFields() []Field {
-	return []Field{
-		{
-			Key: "wcag_level", Label: "wcag_level    ", Kind: KindSelect,
-			Options: []string{"A", "AA", "AAA", "None"},
-			Value:   "AA", SelIdx: 1,
-		},
-		{
-			Key: "seo_render_strategy", Label: "seo_rendering ", Kind: KindSelect,
-			Options: []string{"SSR", "SSG", "ISR", "Prerender", "None"},
-			Value:   "None", SelIdx: 4,
-		},
-		{
-			Key: "sitemap", Label: "sitemap       ", Kind: KindSelect,
-			Options: []string{"false", "true"}, Value: "false",
-		},
-		{
-			Key: "meta_tag_injection", Label: "meta_tags     ", Kind: KindSelect,
-			Options: []string{"Manual", "Automatic (react-helmet)", "Framework-native", "None"},
-			Value:   "None", SelIdx: 3,
-		},
-		{
-			Key: "analytics", Label: "analytics     ", Kind: KindSelect,
-			Options: []string{"PostHog", "Google Analytics 4", "Plausible", "Mixpanel", "Segment", "Custom", "None"},
-			Value:   "None", SelIdx: 6,
-		},
-		{
-			Key: "telemetry", Label: "frontend_rum  ", Kind: KindSelect,
-			Options: []string{"Sentry", "Datadog RUM", "LogRocket", "New Relic Browser", "Custom", "None"},
-			Value:   "None", SelIdx: 5,
-		},
-	}
-}
-
-func defaultNavFields() []Field {
-	return []Field{
-		{
-			Key: "nav_type", Label: "nav_type      ", Kind: KindSelect,
-			Options: []string{
-				"Top bar", "Sidebar", "Bottom tabs (mobile)",
-				"Hamburger menu", "Combined",
-			},
-			Value: "Top bar",
-		},
-		{
-			Key: "breadcrumbs", Label: "breadcrumbs   ", Kind: KindSelect,
-			Options: []string{"false", "true"}, Value: "false",
-		},
-		{
-			Key: "auth_aware", Label: "auth_aware    ", Kind: KindSelect,
-			Options: []string{"false", "true"}, Value: "true", SelIdx: 1,
-		},
-	}
-}
 
 // ── FrontendEditor ────────────────────────────────────────────────────────────
 
@@ -516,15 +68,26 @@ type FrontendEditor struct {
 	assetForm    []Field
 	assetFormIdx int
 
+	// COMPONENTS (drill-down from page form — press C)
+	inPageComp  bool
+	pageComps   []manifest.PageComponentDef
+	compSubView ceSubView
+	compIdx     int
+	compForm    []Field
+	compFormIdx int
+
 	// Cross-editor data
-	availableAuthRoles []string // from BackendEditor auth roles
+	availableAuthRoles   []string // from BackendEditor auth roles
+	backendProtocols     []string // comm-link protocols (REST (HTTP), GraphQL, gRPC, tRPC, …)
+	backendSvcFrameworks []string // service frameworks (tRPC, NestJS, …)
+	availableEndpoints   []string // from ContractsEditor.EndpointNames()
+	availableDTOs        []string // from ContractsEditor.DTONames()
 
 	// Dropdown state for KindSelect/KindMultiSelect fields
-	ddOpen   bool
-	ddOptIdx int
+	dd DropdownState
 
 	// Shared
-	internalMode feMode
+	internalMode Mode
 	formInput    textinput.Model
 	width        int
 }
@@ -543,6 +106,28 @@ func newFrontendEditor() FrontendEditor {
 // SetAuthRoles sets the available auth role options for page forms.
 func (fe *FrontendEditor) SetAuthRoles(roles []string) {
 	fe.availableAuthRoles = roles
+}
+
+// SetBackendProtocols updates the backend protocol/framework context used to
+// filter the data_fetching options. Triggers a re-evaluation of dependent fields.
+func (fe *FrontendEditor) SetBackendProtocols(protocols, svcFrameworks []string) {
+	if stringSlicesEqual(fe.backendProtocols, protocols) &&
+		stringSlicesEqual(fe.backendSvcFrameworks, svcFrameworks) {
+		return
+	}
+	fe.backendProtocols = protocols
+	fe.backendSvcFrameworks = svcFrameworks
+	fe.updateFEDependentOptions()
+}
+
+// SetAvailableEndpoints updates the endpoint name list for component forms.
+func (fe *FrontendEditor) SetAvailableEndpoints(endpoints []string) {
+	fe.availableEndpoints = endpoints
+}
+
+// SetAvailableDTOs updates the DTO name list for component forms.
+func (fe *FrontendEditor) SetAvailableDTOs(dtos []string) {
+	fe.availableDTOs = dtos
 }
 
 // Language returns the frontend language selected in the Tech sub-tab.
@@ -577,8 +162,10 @@ func (fe FrontendEditor) ToManifestFrontendPillar() manifest.FrontendPillar {
 	if fe.techEnabled {
 		p.Tech = manifest.FrontendTechConfig{
 			Language:           fieldGet(fe.techFields, "language"),
+			LanguageVersion:    fieldGet(fe.techFields, "language_version"),
 			Platform:           fieldGet(fe.techFields, "platform"),
 			Framework:          fieldGet(fe.techFields, "framework"),
+			FrameworkVersion:   fieldGet(fe.techFields, "framework_version"),
 			MetaFramework:      fieldGet(fe.techFields, "meta_framework"),
 			PackageManager:     fieldGet(fe.techFields, "pkg_manager"),
 			Styling:            fieldGet(fe.techFields, "styling"),
@@ -593,7 +180,6 @@ func (fe FrontendEditor) ToManifestFrontendPillar() manifest.FrontendPillar {
 			AuthFlowType:       fieldGet(fe.techFields, "auth_flow"),
 			ErrorBoundary:      fieldGet(fe.techFields, "error_boundary"),
 			BundleOptimization: fieldGet(fe.techFields, "bundle_opt"),
-			FrontendTesting:    fieldGet(fe.techFields, "fe_testing"),
 			FrontendLinter:     fieldGet(fe.techFields, "fe_linter"),
 		}
 		// Legacy compatibility
@@ -624,7 +210,7 @@ func (fe FrontendEditor) ToManifestFrontendPillar() manifest.FrontendPillar {
 		p.I18n = manifest.I18nConfig{
 			Enabled:             fieldGet(fe.i18nFields, "enabled"),
 			DefaultLocale:       fieldGet(fe.i18nFields, "default_locale"),
-			SupportedLocales:    fieldGet(fe.i18nFields, "supported_locales"),
+			SupportedLocales:    fieldGetMulti(fe.i18nFields, "supported_locales"),
 			TranslationStrategy: fieldGet(fe.i18nFields, "translation_strategy"),
 			TimezoneHandling:    fieldGet(fe.i18nFields, "timezone_handling"),
 		}
@@ -649,8 +235,10 @@ func (fe FrontendEditor) FromFrontendPillar(fp manifest.FrontendPillar) Frontend
 	if t.Language != "" || t.Framework != "" || t.Platform != "" {
 		fe.techEnabled = true
 		fe.techFields = setFieldValue(fe.techFields, "language", t.Language)
+		fe.techFields = setFieldValue(fe.techFields, "language_version", t.LanguageVersion)
 		fe.techFields = setFieldValue(fe.techFields, "platform", t.Platform)
 		fe.techFields = setFieldValue(fe.techFields, "framework", t.Framework)
+		fe.techFields = setFieldValue(fe.techFields, "framework_version", t.FrameworkVersion)
 		fe.techFields = setFieldValue(fe.techFields, "meta_framework", t.MetaFramework)
 		fe.techFields = setFieldValue(fe.techFields, "pkg_manager", t.PackageManager)
 		fe.techFields = setFieldValue(fe.techFields, "styling", t.Styling)
@@ -665,7 +253,6 @@ func (fe FrontendEditor) FromFrontendPillar(fp manifest.FrontendPillar) Frontend
 		fe.techFields = setFieldValue(fe.techFields, "auth_flow", t.AuthFlowType)
 		fe.techFields = setFieldValue(fe.techFields, "error_boundary", t.ErrorBoundary)
 		fe.techFields = setFieldValue(fe.techFields, "bundle_opt", t.BundleOptimization)
-		fe.techFields = setFieldValue(fe.techFields, "fe_testing", t.FrontendTesting)
 		fe.techFields = setFieldValue(fe.techFields, "fe_linter", t.FrontendLinter)
 	}
 
@@ -678,7 +265,7 @@ func (fe FrontendEditor) FromFrontendPillar(fp manifest.FrontendPillar) Frontend
 		fe.themeFields = setFieldValue(fe.themeFields, "elevation", th.Elevation)
 		fe.themeFields = setFieldValue(fe.themeFields, "motion", th.Motion)
 		fe.themeFields = setFieldValue(fe.themeFields, "vibe", th.Vibe)
-		fe.themeFields = setFieldValue(fe.themeFields, "colors", th.Colors)
+		fe.themeFields = restoreMultiSelectValue(fe.themeFields, "colors", th.Colors)
 		fe.themeFields = setFieldValue(fe.themeFields, "description", th.Description)
 	}
 
@@ -705,7 +292,7 @@ func (fe FrontendEditor) FromFrontendPillar(fp manifest.FrontendPillar) Frontend
 		fe.i18nEnabled = true
 		fe.i18nFields = setFieldValue(fe.i18nFields, "enabled", i.Enabled)
 		fe.i18nFields = setFieldValue(fe.i18nFields, "default_locale", i.DefaultLocale)
-		fe.i18nFields = setFieldValue(fe.i18nFields, "supported_locales", i.SupportedLocales)
+		fe.i18nFields = restoreMultiSelectValue(fe.i18nFields, "supported_locales", i.SupportedLocales)
 		fe.i18nFields = setFieldValue(fe.i18nFields, "translation_strategy", i.TranslationStrategy)
 		fe.i18nFields = setFieldValue(fe.i18nFields, "timezone_handling", i.TimezoneHandling)
 	}
@@ -727,14 +314,14 @@ func (fe FrontendEditor) FromFrontendPillar(fp manifest.FrontendPillar) Frontend
 // ── Mode / HintLine ───────────────────────────────────────────────────────────
 
 func (fe FrontendEditor) Mode() Mode {
-	if fe.internalMode == feInsert {
+	if fe.internalMode == ModeInsert {
 		return ModeInsert
 	}
 	return ModeNormal
 }
 
 func (fe FrontendEditor) HintLine() string {
-	if fe.internalMode == feInsert {
+	if fe.internalMode == ModeInsert {
 		return StyleInsertMode.Render(" -- INSERT -- ") +
 			StyleHelpDesc.Render("  Esc: normal  Tab: next field")
 	}
@@ -768,7 +355,13 @@ func (fe FrontendEditor) HintLine() string {
 		if fe.pageSubView == ceViewList {
 			return hintBar("j/k", "navigate", "a", "add page", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
 		}
-		return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
+		if fe.inPageComp {
+			if fe.compSubView == ceViewList {
+				return hintBar("j/k", "navigate", "a", "add component", "d", "delete", "Enter", "edit", "b/Esc", "back")
+			}
+			return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
+		}
+		return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "C", "components", "b/Esc", "back")
 	case feTabAssets:
 		if fe.assetSubView == ceViewList {
 			return hintBar("j/k", "navigate", "a", "add asset", "d", "delete", "Enter", "edit", "h/l", "sub-tab")
@@ -786,7 +379,7 @@ func (fe FrontendEditor) Update(msg tea.Msg) (FrontendEditor, tea.Cmd) {
 		fe.formInput.Width = wsz.Width - 22
 		return fe, nil
 	}
-	if fe.internalMode == feInsert {
+	if fe.internalMode == ModeInsert {
 		return fe.updateInsert(msg)
 	}
 
@@ -833,7 +426,7 @@ func (fe FrontendEditor) updateInsert(msg tea.Msg) (FrontendEditor, tea.Cmd) {
 		switch key.String() {
 		case "esc":
 			fe.saveInput()
-			fe.internalMode = feNormal
+			fe.internalMode = ModeNormal
 			fe.formInput.Blur()
 			return fe, nil
 		case "tab":
@@ -864,7 +457,12 @@ func (fe *FrontendEditor) advanceField(delta int) {
 			fe.themeFormIdx = (fe.themeFormIdx + delta + n) % n
 		}
 	case feTabPages:
-		if fe.pageSubView == ceViewForm {
+		if fe.inPageComp && fe.compSubView == ceViewForm {
+			n := len(fe.compForm)
+			if n > 0 {
+				fe.compFormIdx = (fe.compFormIdx + delta + n) % n
+			}
+		} else if fe.pageSubView == ceViewForm {
 			n := len(fe.pageForm)
 			if n > 0 {
 				fe.pageFormIdx = (fe.pageFormIdx + delta + n) % n
@@ -907,7 +505,9 @@ func (fe *FrontendEditor) saveInput() {
 			fe.themeFields[fe.themeFormIdx].SaveTextInput(val)
 		}
 	case feTabPages:
-		if fe.pageSubView == ceViewForm && fe.pageFormIdx < len(fe.pageForm) && fe.pageForm[fe.pageFormIdx].CanEditAsText() {
+		if fe.inPageComp && fe.compSubView == ceViewForm && fe.compFormIdx < len(fe.compForm) && fe.compForm[fe.compFormIdx].CanEditAsText() {
+			fe.compForm[fe.compFormIdx].SaveTextInput(val)
+		} else if fe.pageSubView == ceViewForm && fe.pageFormIdx < len(fe.pageForm) && fe.pageForm[fe.pageFormIdx].CanEditAsText() {
 			fe.pageForm[fe.pageFormIdx].SaveTextInput(val)
 		}
 	case feTabNav:
@@ -937,7 +537,9 @@ func (fe FrontendEditor) tryEnterInsert() (FrontendEditor, tea.Cmd) {
 	case feTabTheme:
 		n = len(fe.themeFields)
 	case feTabPages:
-		if fe.pageSubView == ceViewForm {
+		if fe.inPageComp && fe.compSubView == ceViewForm {
+			n = len(fe.compForm)
+		} else if fe.pageSubView == ceViewForm {
 			n = len(fe.pageForm)
 		}
 	case feTabNav:
@@ -963,7 +565,9 @@ func (fe FrontendEditor) tryEnterInsert() (FrontendEditor, tea.Cmd) {
 				f = &fe.themeFields[fe.themeFormIdx]
 			}
 		case feTabPages:
-			if fe.pageSubView == ceViewForm && fe.pageFormIdx < len(fe.pageForm) {
+			if fe.inPageComp && fe.compSubView == ceViewForm && fe.compFormIdx < len(fe.compForm) {
+				f = &fe.compForm[fe.compFormIdx]
+			} else if fe.pageSubView == ceViewForm && fe.pageFormIdx < len(fe.pageForm) {
 				f = &fe.pageForm[fe.pageFormIdx]
 			}
 		case feTabNav:
@@ -987,7 +591,7 @@ func (fe FrontendEditor) tryEnterInsert() (FrontendEditor, tea.Cmd) {
 			break
 		}
 		if f.CanEditAsText() {
-			fe.internalMode = feInsert
+			fe.internalMode = ModeInsert
 			fe.formInput.SetValue(f.TextInputValue())
 			fe.formInput.Width = fe.width - 22
 			fe.formInput.CursorEnd()
@@ -998,805 +602,3 @@ func (fe FrontendEditor) tryEnterInsert() (FrontendEditor, tea.Cmd) {
 	return fe, nil
 }
 
-func (fe FrontendEditor) updateTech(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
-	if !fe.techEnabled {
-		if key.String() == "a" {
-			fe.techEnabled = true
-			fe.techFormIdx = 0
-		}
-		return fe, nil
-	}
-	if fe.ddOpen {
-		return fe.updateTechDropdown(key)
-	}
-	switch key.String() {
-	case "j", "down":
-		if fe.techFormIdx < len(fe.techFields)-1 {
-			fe.techFormIdx++
-		}
-	case "k", "up":
-		if fe.techFormIdx > 0 {
-			fe.techFormIdx--
-		}
-	case "enter", " ":
-		f := &fe.techFields[fe.techFormIdx]
-		if f.Kind == KindSelect {
-			fe.ddOpen = true
-			fe.ddOptIdx = f.SelIdx
-		} else {
-			return fe.tryEnterInsert()
-		}
-	case "H", "shift+left":
-		f := &fe.techFields[fe.techFormIdx]
-		if f.Kind == KindSelect {
-			f.CyclePrev()
-			if f.Key == "language" || f.Key == "platform" || f.Key == "framework" {
-				fe.updateFEDependentOptions()
-			}
-		}
-	case "D":
-		fe.techEnabled = false
-		fe.techFields = defaultFETechFields()
-		fe.techFormIdx = 0
-	case "i", "a":
-		return fe.tryEnterInsert()
-	}
-	return fe, nil
-}
-
-func (fe FrontendEditor) updateTechDropdown(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
-	if fe.techFormIdx >= len(fe.techFields) {
-		fe.ddOpen = false
-		return fe, nil
-	}
-	f := &fe.techFields[fe.techFormIdx]
-	switch key.String() {
-	case "j", "down":
-		if fe.ddOptIdx < len(f.Options)-1 {
-			fe.ddOptIdx++
-		}
-	case "k", "up":
-		if fe.ddOptIdx > 0 {
-			fe.ddOptIdx--
-		}
-	case " ", "enter":
-		f.SelIdx = fe.ddOptIdx
-		if fe.ddOptIdx < len(f.Options) {
-			f.Value = f.Options[fe.ddOptIdx]
-		}
-		fe.ddOpen = false
-		if f.Key == "language" || f.Key == "platform" || f.Key == "framework" {
-			fe.updateFEDependentOptions()
-		}
-		if f.PrepareCustomEntry() {
-			return fe.tryEnterInsert()
-		}
-	case "esc", "b":
-		fe.ddOpen = false
-	}
-	return fe, nil
-}
-
-// setTechFieldOptions updates a tech field's options, preserving the current
-// value when it is still valid, or resetting to the first option otherwise.
-func (fe *FrontendEditor) setTechFieldOptions(key string, opts []string) {
-	for i := range fe.techFields {
-		if fe.techFields[i].Key != key {
-			continue
-		}
-		current := fe.techFields[i].Value
-		fe.techFields[i].Options = opts
-		found := false
-		for j, opt := range opts {
-			if opt == current {
-				fe.techFields[i].SelIdx = j
-				found = true
-				break
-			}
-		}
-		if !found && len(opts) > 0 {
-			fe.techFields[i].SelIdx = 0
-			fe.techFields[i].Value = opts[0]
-		}
-		return
-	}
-}
-
-// updateFEDependentOptions refreshes all tech fields whose valid options depend
-// on the currently selected language, platform, or framework.
-func (fe *FrontendEditor) updateFEDependentOptions() {
-	lang := fieldGet(fe.techFields, "language")
-	platform := fieldGet(fe.techFields, "platform")
-
-	// framework ← language
-	if opts, ok := frontendFrameworksByLang[lang]; ok {
-		fe.setTechFieldOptions("framework", opts)
-	} else {
-		fe.setTechFieldOptions("framework", []string{"React", "Vue", "Svelte"})
-	}
-
-	framework := fieldGet(fe.techFields, "framework")
-
-	// meta_framework ← framework
-	if opts, ok := frontendMetaframeworksByFramework[framework]; ok {
-		fe.setTechFieldOptions("meta_framework", opts)
-	} else {
-		fe.setTechFieldOptions("meta_framework", []string{"None"})
-	}
-
-	// pkg_manager ← language
-	if opts, ok := fePkgManagerByLanguage[lang]; ok {
-		fe.setTechFieldOptions("pkg_manager", opts)
-	}
-
-	// styling ← language
-	if opts, ok := feStylingByLanguage[lang]; ok {
-		fe.setTechFieldOptions("styling", opts)
-	}
-
-	// component_lib ← framework
-	if opts, ok := feComponentLibByFramework[framework]; ok {
-		fe.setTechFieldOptions("component_lib", opts)
-	} else {
-		fe.setTechFieldOptions("component_lib", []string{"None", "Custom"})
-	}
-
-	// state_mgmt ← framework
-	if opts, ok := feStateMgmtByFramework[framework]; ok {
-		fe.setTechFieldOptions("state_mgmt", opts)
-	} else {
-		fe.setTechFieldOptions("state_mgmt", []string{"None"})
-	}
-
-	// data_fetching ← framework
-	if opts, ok := feDataFetchingByFramework[framework]; ok {
-		fe.setTechFieldOptions("data_fetching", opts)
-	} else {
-		fe.setTechFieldOptions("data_fetching", []string{"Native fetch"})
-	}
-
-	// form_handling ← framework
-	if opts, ok := feFormHandlingByFramework[framework]; ok {
-		fe.setTechFieldOptions("form_handling", opts)
-	} else {
-		fe.setTechFieldOptions("form_handling", []string{"None"})
-	}
-
-	// validation ← language
-	if opts, ok := feValidationByLanguage[lang]; ok {
-		fe.setTechFieldOptions("validation", opts)
-	} else {
-		fe.setTechFieldOptions("validation", []string{"None"})
-	}
-
-	// pwa_support ← platform
-	if opts, ok := fePwaSupportByPlatform[platform]; ok {
-		fe.setTechFieldOptions("pwa_support", opts)
-	} else {
-		fe.setTechFieldOptions("pwa_support", []string{"None"})
-	}
-
-	// image_opt ← platform
-	if opts, ok := feImageOptByPlatform[platform]; ok {
-		fe.setTechFieldOptions("image_opt", opts)
-	} else {
-		fe.setTechFieldOptions("image_opt", []string{"None"})
-	}
-
-	// error_boundary ← framework
-	if opts, ok := feErrorBoundaryByFramework[framework]; ok {
-		fe.setTechFieldOptions("error_boundary", opts)
-	} else {
-		fe.setTechFieldOptions("error_boundary", []string{"Framework default", "Custom"})
-	}
-
-	// bundle_opt ← language
-	if opts, ok := feBundleOptByLanguage[lang]; ok {
-		fe.setTechFieldOptions("bundle_opt", opts)
-	} else {
-		fe.setTechFieldOptions("bundle_opt", []string{"None"})
-	}
-
-	// fe_testing ← language
-	if opts, ok := feTestingByLanguage[lang]; ok {
-		fe.setTechFieldOptions("fe_testing", opts)
-	} else {
-		fe.setTechFieldOptions("fe_testing", []string{"None"})
-	}
-
-	// fe_linter ← language
-	if opts, ok := feLinterByLanguage[lang]; ok {
-		fe.setTechFieldOptions("fe_linter", opts)
-	} else {
-		fe.setTechFieldOptions("fe_linter", []string{"Custom", "None"})
-	}
-}
-
-func (fe FrontendEditor) updateTheme(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
-	if !fe.themeEnabled {
-		if key.String() == "a" {
-			fe.themeEnabled = true
-			fe.themeFormIdx = 0
-		}
-		return fe, nil
-	}
-	if fe.ddOpen {
-		return fe.updateThemeDropdown(key)
-	}
-	switch key.String() {
-	case "j", "down":
-		if fe.themeFormIdx < len(fe.themeFields)-1 {
-			fe.themeFormIdx++
-		}
-	case "k", "up":
-		if fe.themeFormIdx > 0 {
-			fe.themeFormIdx--
-		}
-	case "enter", " ":
-		f := &fe.themeFields[fe.themeFormIdx]
-		if f.Kind == KindSelect {
-			fe.ddOpen = true
-			fe.ddOptIdx = f.SelIdx
-		} else {
-			return fe.tryEnterInsert()
-		}
-	case "H", "shift+left":
-		f := &fe.themeFields[fe.themeFormIdx]
-		if f.Kind == KindSelect {
-			f.CyclePrev()
-		}
-	case "D":
-		fe.themeEnabled = false
-		fe.themeFields = defaultFEThemeFields()
-		fe.themeFormIdx = 0
-	case "i", "a":
-		return fe.tryEnterInsert()
-	}
-	return fe, nil
-}
-
-func (fe FrontendEditor) updateThemeDropdown(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
-	if fe.themeFormIdx >= len(fe.themeFields) {
-		fe.ddOpen = false
-		return fe, nil
-	}
-	f := &fe.themeFields[fe.themeFormIdx]
-	switch key.String() {
-	case "j", "down":
-		if fe.ddOptIdx < len(f.Options)-1 {
-			fe.ddOptIdx++
-		}
-	case "k", "up":
-		if fe.ddOptIdx > 0 {
-			fe.ddOptIdx--
-		}
-	case " ", "enter":
-		f.SelIdx = fe.ddOptIdx
-		if fe.ddOptIdx < len(f.Options) {
-			f.Value = f.Options[fe.ddOptIdx]
-		}
-		fe.ddOpen = false
-		if f.PrepareCustomEntry() {
-			return fe.tryEnterInsert()
-		}
-	case "esc", "b":
-		fe.ddOpen = false
-	}
-	return fe, nil
-}
-
-func (fe FrontendEditor) updatePages(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
-	if fe.pageSubView == ceViewList {
-		return fe.updatePageList(key)
-	}
-	return fe.updatePageForm(key)
-}
-
-func (fe FrontendEditor) updatePageList(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
-	n := len(fe.pages)
-	switch key.String() {
-	case "j", "down":
-		if n > 0 && fe.pageIdx < n-1 {
-			fe.pageIdx++
-		}
-	case "k", "up":
-		if fe.pageIdx > 0 {
-			fe.pageIdx--
-		}
-	case "a":
-		fe.pages = append(fe.pages, manifest.PageDef{})
-		fe.pageIdx = len(fe.pages) - 1
-		fe.pageForm = defaultPageFormFields(fe.availableAuthRoles, fe.pageRoutes())
-		existing := make([]string, 0, len(fe.pages)-1)
-		for i, p := range fe.pages {
-			if i != fe.pageIdx {
-				existing = append(existing, p.Name)
-			}
-		}
-		name := uniqueName("page", existing)
-		fe.pageForm = setFieldValue(fe.pageForm, "name", name)
-		fe.pageForm = setFieldValue(fe.pageForm, "route", "/"+name)
-		fe.pageFormIdx = 0
-		fe.pageSubView = ceViewForm
-		return fe.tryEnterInsert()
-	case "d":
-		if n > 0 {
-			fe.pages = append(fe.pages[:fe.pageIdx], fe.pages[fe.pageIdx+1:]...)
-			if fe.pageIdx > 0 && fe.pageIdx >= len(fe.pages) {
-				fe.pageIdx = len(fe.pages) - 1
-			}
-		}
-	case "enter":
-		if n > 0 {
-			p := fe.pages[fe.pageIdx]
-			// Exclude current page's route from linked_pages options
-			otherRoutes := make([]string, 0, len(fe.pages))
-			for i, pg := range fe.pages {
-				if i != fe.pageIdx && pg.Route != "" {
-					otherRoutes = append(otherRoutes, pg.Route)
-				}
-			}
-			fe.pageForm = defaultPageFormFields(fe.availableAuthRoles, otherRoutes)
-			fe.pageForm = setFieldValue(fe.pageForm, "name", p.Name)
-			fe.pageForm = setFieldValue(fe.pageForm, "route", p.Route)
-			fe.pageForm = setFieldValue(fe.pageForm, "auth_required", p.AuthRequired)
-			if p.Layout != "" {
-				fe.pageForm = setFieldValue(fe.pageForm, "layout", p.Layout)
-			}
-			fe.pageForm = setFieldValue(fe.pageForm, "description", p.Description)
-			fe.pageForm = setFieldValue(fe.pageForm, "core_actions", p.CoreActions)
-			if p.Loading != "" {
-				fe.pageForm = setFieldValue(fe.pageForm, "loading", p.Loading)
-			}
-			if p.ErrorHandling != "" {
-				fe.pageForm = setFieldValue(fe.pageForm, "error_handling", p.ErrorHandling)
-			}
-			// Restore multiselect for auth_roles
-			if p.AuthRoles != "" {
-				for i := range fe.pageForm {
-					if fe.pageForm[i].Key == "auth_roles" {
-						for _, sel := range strings.Split(p.AuthRoles, ", ") {
-							for j, opt := range fe.pageForm[i].Options {
-								if opt == strings.TrimSpace(sel) {
-									fe.pageForm[i].SelectedIdxs = append(fe.pageForm[i].SelectedIdxs, j)
-								}
-							}
-						}
-						break
-					}
-				}
-			}
-			// Restore multiselect for linked_pages
-			if p.LinkedPages != "" {
-				for i := range fe.pageForm {
-					if fe.pageForm[i].Key == "linked_pages" {
-						for _, sel := range strings.Split(p.LinkedPages, ", ") {
-							for j, opt := range fe.pageForm[i].Options {
-								if opt == strings.TrimSpace(sel) {
-									fe.pageForm[i].SelectedIdxs = append(fe.pageForm[i].SelectedIdxs, j)
-								}
-							}
-						}
-						break
-					}
-				}
-			}
-			fe.pageFormIdx = 0
-			fe.pageSubView = ceViewForm
-		}
-	}
-	return fe, nil
-}
-
-func (fe FrontendEditor) updatePageForm(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
-	// Handle dropdown if open
-	if fe.ddOpen {
-		return fe.updatePageFormDropdown(key)
-	}
-	switch key.String() {
-	case "j", "down":
-		if fe.pageFormIdx < len(fe.pageForm)-1 {
-			fe.pageFormIdx++
-		}
-	case "k", "up":
-		if fe.pageFormIdx > 0 {
-			fe.pageFormIdx--
-		}
-	case "enter", " ":
-		f := &fe.pageForm[fe.pageFormIdx]
-		if f.Kind == KindSelect || f.Kind == KindMultiSelect {
-			fe.ddOpen = true
-			if f.Kind == KindSelect {
-				fe.ddOptIdx = f.SelIdx
-			} else {
-				fe.ddOptIdx = f.DDCursor
-			}
-		} else {
-			return fe.tryEnterInsert()
-		}
-	case "H", "shift+left":
-		f := &fe.pageForm[fe.pageFormIdx]
-		if f.Kind == KindSelect {
-			f.CyclePrev()
-		}
-	case "i", "a":
-		if fe.pageForm[fe.pageFormIdx].CanEditAsText() {
-			return fe.tryEnterInsert()
-		}
-	case "b", "esc":
-		fe.savePageForm()
-		fe.pageSubView = ceViewList
-	}
-	return fe, nil
-}
-
-func (fe FrontendEditor) updatePageFormDropdown(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
-	if fe.pageFormIdx >= len(fe.pageForm) {
-		fe.ddOpen = false
-		return fe, nil
-	}
-	f := &fe.pageForm[fe.pageFormIdx]
-	switch key.String() {
-	case "j", "down":
-		if fe.ddOptIdx < len(f.Options)-1 {
-			fe.ddOptIdx++
-		}
-	case "k", "up":
-		if fe.ddOptIdx > 0 {
-			fe.ddOptIdx--
-		}
-	case " ":
-		if f.Kind == KindMultiSelect {
-			f.ToggleMultiSelect(fe.ddOptIdx)
-			f.DDCursor = fe.ddOptIdx
-		} else if f.Kind == KindSelect {
-			f.SelIdx = fe.ddOptIdx
-			if fe.ddOptIdx < len(f.Options) {
-				f.Value = f.Options[fe.ddOptIdx]
-			}
-			fe.ddOpen = false
-			if f.PrepareCustomEntry() {
-				return fe.tryEnterInsert()
-			}
-		}
-	case "enter":
-		if f.Kind == KindMultiSelect {
-			f.DDCursor = fe.ddOptIdx
-		} else if f.Kind == KindSelect {
-			f.SelIdx = fe.ddOptIdx
-			if fe.ddOptIdx < len(f.Options) {
-				f.Value = f.Options[fe.ddOptIdx]
-			}
-		}
-		fe.ddOpen = false
-		if f.Kind == KindSelect && f.PrepareCustomEntry() {
-			return fe.tryEnterInsert()
-		}
-	case "esc", "b":
-		if f.Kind == KindMultiSelect {
-			f.DDCursor = fe.ddOptIdx
-		}
-		fe.ddOpen = false
-	}
-	return fe, nil
-}
-
-func (fe *FrontendEditor) savePageForm() {
-	if fe.pageIdx >= len(fe.pages) {
-		return
-	}
-	p := &fe.pages[fe.pageIdx]
-	p.Name = fieldGet(fe.pageForm, "name")
-	p.Route = fieldGet(fe.pageForm, "route")
-	p.AuthRequired = fieldGet(fe.pageForm, "auth_required")
-	p.Layout = fieldGet(fe.pageForm, "layout")
-	p.Description = fieldGet(fe.pageForm, "description")
-	p.CoreActions = fieldGet(fe.pageForm, "core_actions")
-	p.Loading = fieldGet(fe.pageForm, "loading")
-	p.ErrorHandling = fieldGet(fe.pageForm, "error_handling")
-	p.AuthRoles = fieldGetMulti(fe.pageForm, "auth_roles")
-	p.LinkedPages = fieldGetMulti(fe.pageForm, "linked_pages")
-}
-
-func (fe FrontendEditor) updateNav(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
-	if !fe.navEnabled {
-		if key.String() == "a" {
-			fe.navEnabled = true
-			fe.navFormIdx = 0
-		}
-		return fe, nil
-	}
-	if fe.ddOpen {
-		return fe.updateNavDropdown(key)
-	}
-	switch key.String() {
-	case "j", "down":
-		if fe.navFormIdx < len(fe.navFields)-1 {
-			fe.navFormIdx++
-		}
-	case "k", "up":
-		if fe.navFormIdx > 0 {
-			fe.navFormIdx--
-		}
-	case "enter", " ":
-		f := &fe.navFields[fe.navFormIdx]
-		if f.Kind == KindSelect {
-			fe.ddOpen = true
-			fe.ddOptIdx = f.SelIdx
-		} else {
-			return fe.tryEnterInsert()
-		}
-	case "H", "shift+left":
-		f := &fe.navFields[fe.navFormIdx]
-		if f.Kind == KindSelect {
-			f.CyclePrev()
-		}
-	case "D":
-		fe.navEnabled = false
-		fe.navFields = defaultNavFields()
-		fe.navFormIdx = 0
-	case "i", "a":
-		return fe.tryEnterInsert()
-	}
-	return fe, nil
-}
-
-func (fe FrontendEditor) updateNavDropdown(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
-	if fe.navFormIdx >= len(fe.navFields) {
-		fe.ddOpen = false
-		return fe, nil
-	}
-	f := &fe.navFields[fe.navFormIdx]
-	switch key.String() {
-	case "j", "down":
-		if fe.ddOptIdx < len(f.Options)-1 {
-			fe.ddOptIdx++
-		}
-	case "k", "up":
-		if fe.ddOptIdx > 0 {
-			fe.ddOptIdx--
-		}
-	case " ", "enter":
-		f.SelIdx = fe.ddOptIdx
-		if fe.ddOptIdx < len(f.Options) {
-			f.Value = f.Options[fe.ddOptIdx]
-		}
-		fe.ddOpen = false
-	case "esc", "b":
-		fe.ddOpen = false
-	}
-	return fe, nil
-}
-
-// ── View ──────────────────────────────────────────────────────────────────────
-
-func (fe FrontendEditor) View(w, h int) string {
-	fe.width = w
-	fe.formInput.Width = w - 22
-	var lines []string
-	lines = append(lines,
-		StyleSectionDesc.Render("  # Frontend — technologies, theming, pages, and navigation"),
-		"",
-		renderSubTabBar(feTabLabels, int(fe.activeTab), w),
-		"",
-	)
-	const feHeaderH = 4
-
-	switch fe.activeTab {
-	case feTabTech:
-		if fe.techEnabled {
-			lines = append(lines, renderFormFields(w, fe.techFields, fe.techFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
-		} else {
-			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
-		}
-	case feTabTheme:
-		if fe.themeEnabled {
-			lines = append(lines, renderFormFields(w, fe.themeFields, fe.themeFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
-		} else {
-			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
-		}
-	case feTabPages:
-		pageLines := fe.viewPages(w)
-		if fe.pageSubView == ceViewList {
-			pageLines = appendViewport(pageLines, 2, fe.pageIdx, h-feHeaderH)
-		}
-		lines = append(lines, pageLines...)
-	case feTabNav:
-		if fe.navEnabled {
-			lines = append(lines, renderFormFields(w, fe.navFields, fe.navFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
-		} else {
-			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
-		}
-	case feTabI18n:
-		if fe.i18nEnabled {
-			lines = append(lines, renderFormFields(w, fe.i18nFields, fe.i18nFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
-		} else {
-			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
-		}
-	case feTabA11ySEO:
-		if fe.a11yEnabled {
-			lines = append(lines, renderFormFields(w, fe.a11yFields, fe.a11yFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
-		} else {
-			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
-		}
-	case feTabAssets:
-		assetLines := fe.viewAssets(w)
-		if fe.assetSubView == ceViewList {
-			assetLines = appendViewport(assetLines, 2, fe.assetIdx, h-feHeaderH)
-		}
-		lines = append(lines, assetLines...)
-	}
-
-	return fillTildes(lines, h)
-}
-
-func (fe FrontendEditor) updateI18n(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
-	if !fe.i18nEnabled {
-		if key.String() == "a" {
-			fe.i18nEnabled = true
-			fe.i18nFormIdx = 0
-		}
-		return fe, nil
-	}
-	if fe.ddOpen {
-		return fe.updateI18nDropdown(key)
-	}
-	switch key.String() {
-	case "j", "down":
-		if fe.i18nFormIdx < len(fe.i18nFields)-1 {
-			fe.i18nFormIdx++
-		}
-	case "k", "up":
-		if fe.i18nFormIdx > 0 {
-			fe.i18nFormIdx--
-		}
-	case "enter", " ":
-		f := &fe.i18nFields[fe.i18nFormIdx]
-		if f.Kind == KindSelect {
-			fe.ddOpen = true
-			fe.ddOptIdx = f.SelIdx
-		} else {
-			return fe.tryEnterInsert()
-		}
-	case "H", "shift+left":
-		f := &fe.i18nFields[fe.i18nFormIdx]
-		if f.Kind == KindSelect {
-			f.CyclePrev()
-		}
-	case "D":
-		fe.i18nEnabled = false
-		fe.i18nFields = defaultI18nFields()
-		fe.i18nFormIdx = 0
-	case "i", "a":
-		return fe.tryEnterInsert()
-	}
-	return fe, nil
-}
-
-func (fe FrontendEditor) updateI18nDropdown(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
-	if fe.i18nFormIdx >= len(fe.i18nFields) {
-		fe.ddOpen = false
-		return fe, nil
-	}
-	f := &fe.i18nFields[fe.i18nFormIdx]
-	switch key.String() {
-	case "j", "down":
-		if fe.ddOptIdx < len(f.Options)-1 {
-			fe.ddOptIdx++
-		}
-	case "k", "up":
-		if fe.ddOptIdx > 0 {
-			fe.ddOptIdx--
-		}
-	case " ", "enter":
-		f.SelIdx = fe.ddOptIdx
-		if fe.ddOptIdx < len(f.Options) {
-			f.Value = f.Options[fe.ddOptIdx]
-		}
-		fe.ddOpen = false
-	case "esc", "b":
-		fe.ddOpen = false
-	}
-	return fe, nil
-}
-
-func (fe FrontendEditor) updateA11ySEO(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
-	if !fe.a11yEnabled {
-		if key.String() == "a" {
-			fe.a11yEnabled = true
-			fe.a11yFormIdx = 0
-		}
-		return fe, nil
-	}
-	if fe.ddOpen {
-		return fe.updateA11ySEODropdown(key)
-	}
-	switch key.String() {
-	case "j", "down":
-		if fe.a11yFormIdx < len(fe.a11yFields)-1 {
-			fe.a11yFormIdx++
-		}
-	case "k", "up":
-		if fe.a11yFormIdx > 0 {
-			fe.a11yFormIdx--
-		}
-	case "enter", " ":
-		f := &fe.a11yFields[fe.a11yFormIdx]
-		if f.Kind == KindSelect {
-			fe.ddOpen = true
-			fe.ddOptIdx = f.SelIdx
-		} else {
-			return fe.tryEnterInsert()
-		}
-	case "H", "shift+left":
-		f := &fe.a11yFields[fe.a11yFormIdx]
-		if f.Kind == KindSelect {
-			f.CyclePrev()
-		}
-	case "D":
-		fe.a11yEnabled = false
-		fe.a11yFields = defaultA11ySEOFields()
-		fe.a11yFormIdx = 0
-	case "i", "a":
-		return fe.tryEnterInsert()
-	}
-	return fe, nil
-}
-
-func (fe FrontendEditor) updateA11ySEODropdown(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
-	if fe.a11yFormIdx >= len(fe.a11yFields) {
-		fe.ddOpen = false
-		return fe, nil
-	}
-	f := &fe.a11yFields[fe.a11yFormIdx]
-	switch key.String() {
-	case "j", "down":
-		if fe.ddOptIdx < len(f.Options)-1 {
-			fe.ddOptIdx++
-		}
-	case "k", "up":
-		if fe.ddOptIdx > 0 {
-			fe.ddOptIdx--
-		}
-	case " ", "enter":
-		f.SelIdx = fe.ddOptIdx
-		if fe.ddOptIdx < len(f.Options) {
-			f.Value = f.Options[fe.ddOptIdx]
-		}
-		fe.ddOpen = false
-	case "esc", "b":
-		fe.ddOpen = false
-	}
-	return fe, nil
-}
-
-func (fe FrontendEditor) viewPages(w int) []string {
-	switch fe.pageSubView {
-	case ceViewList:
-		var lines []string
-		lines = append(lines, StyleSectionDesc.Render("  # Pages — a: add  d: delete  Enter: edit"), "")
-		if len(fe.pages) == 0 {
-			lines = append(lines, StyleSectionDesc.Render("  (no pages yet — press 'a' to add)"))
-		} else {
-			for i, p := range fe.pages {
-				name := p.Name
-				if name == "" {
-					name = fmt.Sprintf("(page #%d)", i+1)
-				}
-				lines = append(lines, renderListItem(w, i == fe.pageIdx, "  ▶ ", name, p.Route))
-			}
-		}
-		return lines
-
-	case ceViewForm:
-		name := fieldGet(fe.pageForm, "name")
-		if name == "" {
-			name = "(new page)"
-		}
-		var lines []string
-		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
-		lines = append(lines, renderFormFields(w, fe.pageForm, fe.pageFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
-		return lines
-	}
-	return nil
-}

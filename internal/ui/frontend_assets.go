@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/vibe-menu/internal/manifest"
@@ -9,7 +10,7 @@ import (
 
 // ── Asset form fields ─────────────────────────────────────────────────────────
 
-func newAssetForm(a manifest.AssetDef) []Field {
+func newAssetForm(a manifest.AssetDef, pageRoutes []string) []Field {
 	usageIdx := 0
 	if a.Usage == manifest.AssetUsageInspiration {
 		usageIdx = 1
@@ -52,6 +53,11 @@ func newAssetForm(a manifest.AssetDef) []Field {
 			Options: []string{"project", "inspiration"}, Value: []string{"project", "inspiration"}[usageIdx], SelIdx: usageIdx,
 		},
 		{
+			Key: "pages", Label: "pages         ", Kind: KindMultiSelect,
+			Options: pageRoutes,
+			Value:   placeholderFor(pageRoutes, "(no pages configured)"),
+		},
+		{
 			Key: "description", Label: "description   ", Kind: KindText,
 			Value: a.Description,
 		},
@@ -81,7 +87,7 @@ func (fe FrontendEditor) updateAssetList(key tea.KeyMsg) (FrontendEditor, tea.Cm
 	case "a":
 		fe.assets = append(fe.assets, manifest.AssetDef{})
 		fe.assetIdx = len(fe.assets) - 1
-		fe.assetForm = newAssetForm(manifest.AssetDef{})
+		fe.assetForm = newAssetForm(manifest.AssetDef{}, fe.pageRoutes())
 		fe.assetFormIdx = 0
 		fe.assetSubView = ceViewForm
 		return fe.tryEnterInsert()
@@ -94,7 +100,23 @@ func (fe FrontendEditor) updateAssetList(key tea.KeyMsg) (FrontendEditor, tea.Cm
 		}
 	case "enter":
 		if n > 0 {
-			fe.assetForm = newAssetForm(fe.assets[fe.assetIdx])
+			a := fe.assets[fe.assetIdx]
+			fe.assetForm = newAssetForm(a, fe.pageRoutes())
+			// Restore pages multiselect
+			if a.Pages != "" {
+				for i := range fe.assetForm {
+					if fe.assetForm[i].Key == "pages" {
+						for _, sel := range strings.Split(a.Pages, ", ") {
+							for j, opt := range fe.assetForm[i].Options {
+								if opt == strings.TrimSpace(sel) {
+									fe.assetForm[i].SelectedIdxs = append(fe.assetForm[i].SelectedIdxs, j)
+								}
+							}
+						}
+						break
+					}
+				}
+			}
 			fe.assetFormIdx = 0
 			fe.assetSubView = ceViewForm
 		}
@@ -103,7 +125,7 @@ func (fe FrontendEditor) updateAssetList(key tea.KeyMsg) (FrontendEditor, tea.Cm
 }
 
 func (fe FrontendEditor) updateAssetForm(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
-	if fe.ddOpen {
+	if fe.dd.Open {
 		return fe.updateAssetFormDropdown(key)
 	}
 	switch key.String() {
@@ -117,9 +139,13 @@ func (fe FrontendEditor) updateAssetForm(key tea.KeyMsg) (FrontendEditor, tea.Cm
 		}
 	case "enter", " ":
 		f := &fe.assetForm[fe.assetFormIdx]
-		if f.Kind == KindSelect {
-			fe.ddOpen = true
-			fe.ddOptIdx = f.SelIdx
+		if f.Kind == KindSelect || f.Kind == KindMultiSelect {
+			fe.dd.Open = true
+			if f.Kind == KindSelect {
+				fe.dd.OptIdx = f.SelIdx
+			} else {
+				fe.dd.OptIdx = f.DDCursor
+			}
 		} else {
 			return fe.tryEnterInsert()
 		}
@@ -141,30 +167,44 @@ func (fe FrontendEditor) updateAssetForm(key tea.KeyMsg) (FrontendEditor, tea.Cm
 
 func (fe FrontendEditor) updateAssetFormDropdown(key tea.KeyMsg) (FrontendEditor, tea.Cmd) {
 	if fe.assetFormIdx >= len(fe.assetForm) {
-		fe.ddOpen = false
+		fe.dd.Open = false
 		return fe, nil
 	}
 	f := &fe.assetForm[fe.assetFormIdx]
+	fe.dd.OptIdx = NavigateDropdown(key.String(), fe.dd.OptIdx, len(f.Options))
 	switch key.String() {
-	case "j", "down":
-		if fe.ddOptIdx < len(f.Options)-1 {
-			fe.ddOptIdx++
+	case " ":
+		if f.Kind == KindMultiSelect {
+			f.ToggleMultiSelect(fe.dd.OptIdx)
+			f.DDCursor = fe.dd.OptIdx
+		} else {
+			f.SelIdx = fe.dd.OptIdx
+			if fe.dd.OptIdx < len(f.Options) {
+				f.Value = f.Options[fe.dd.OptIdx]
+			}
+			fe.dd.Open = false
+			if f.PrepareCustomEntry() {
+				return fe.tryEnterInsert()
+			}
 		}
-	case "k", "up":
-		if fe.ddOptIdx > 0 {
-			fe.ddOptIdx--
+	case "enter":
+		if f.Kind == KindMultiSelect {
+			f.DDCursor = fe.dd.OptIdx
+		} else {
+			f.SelIdx = fe.dd.OptIdx
+			if fe.dd.OptIdx < len(f.Options) {
+				f.Value = f.Options[fe.dd.OptIdx]
+			}
+			if f.PrepareCustomEntry() {
+				return fe.tryEnterInsert()
+			}
 		}
-	case " ", "enter":
-		f.SelIdx = fe.ddOptIdx
-		if fe.ddOptIdx < len(f.Options) {
-			f.Value = f.Options[fe.ddOptIdx]
-		}
-		fe.ddOpen = false
-		if f.PrepareCustomEntry() {
-			return fe.tryEnterInsert()
-		}
+		fe.dd.Open = false
 	case "esc", "b":
-		fe.ddOpen = false
+		if f.Kind == KindMultiSelect {
+			f.DDCursor = fe.dd.OptIdx
+		}
+		fe.dd.Open = false
 	}
 	return fe, nil
 }
@@ -179,6 +219,7 @@ func (fe *FrontendEditor) saveAssetForm() {
 	a.AssetType = fieldGet(fe.assetForm, "asset_type")
 	a.Format = fieldGet(fe.assetForm, "format")
 	a.Usage = manifest.AssetUsage(fieldGet(fe.assetForm, "usage"))
+	a.Pages = fieldGetMulti(fe.assetForm, "pages")
 	a.Description = fieldGet(fe.assetForm, "description")
 }
 
@@ -213,7 +254,7 @@ func (fe FrontendEditor) viewAssets(w int) []string {
 		}
 		var lines []string
 		lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
-		lines = append(lines, renderFormFields(w, fe.assetForm, fe.assetFormIdx, fe.internalMode == feInsert, fe.formInput, fe.ddOpen, fe.ddOptIdx)...)
+		lines = append(lines, renderFormFields(w, fe.assetForm, fe.assetFormIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)...)
 		return lines
 	}
 	return nil

@@ -7,12 +7,15 @@ type ServiceDef struct {
 	Name             string             `json:"name"`
 	Responsibility   string             `json:"responsibility"`
 	Language         string             `json:"language"`
+	LanguageVersion  string             `json:"language_version,omitempty"`
 	Framework        string             `json:"framework"`
-	PatternTag       string             `json:"pattern_tag,omitempty"` // hybrid only
+	FrameworkVersion string             `json:"framework_version,omitempty"`
+	PatternTag       PatternTag         `json:"pattern_tag,omitempty"` // hybrid only
 	Technologies     []string           `json:"technologies,omitempty"`
 	HealthcheckPath  string             `json:"healthcheck_path,omitempty"`
 	ErrorFormat      string             `json:"error_format,omitempty"`
 	ServiceDiscovery string             `json:"service_discovery,omitempty"`
+	Environment      string             `json:"environment,omitempty"`
 	Interfaces       []ExposedInterface `json:"interfaces,omitempty"`
 }
 
@@ -25,13 +28,14 @@ type ExposedInterface struct {
 
 // CommLink describes a directed communication link between two service units.
 type CommLink struct {
-	From               string   `json:"from"`
-	To                 string   `json:"to"`
-	Direction          string   `json:"direction"`
-	Protocol           string   `json:"protocol"`
-	Trigger            string   `json:"trigger,omitempty"`
-	SyncAsync          string   `json:"sync_async"`
-	ResiliencePatterns []string `json:"resilience_patterns,omitempty"`
+	From               string        `json:"from"`
+	To                 string        `json:"to"`
+	Direction          string        `json:"direction"`
+	Protocol           string        `json:"protocol"`
+	Trigger            string        `json:"trigger,omitempty"`
+	SyncAsync          SyncAsyncMode `json:"sync_async"`
+	ResiliencePatterns []string      `json:"resilience_patterns,omitempty"`
+	DTOs               []string      `json:"dtos,omitempty"`
 }
 
 // MessagingConfig describes the message broker configuration.
@@ -54,6 +58,7 @@ type APIGatewayConfig struct {
 	Technology string `json:"technology"`
 	Routing    string `json:"routing"`
 	Features   string `json:"features,omitempty"`
+	Endpoints  string `json:"endpoints,omitempty"`
 }
 
 // PermissionDef defines a named permission (e.g. "users:read").
@@ -79,8 +84,9 @@ type PolicyRule struct {
 
 // AuthConfig describes authentication and identity settings.
 type AuthConfig struct {
-	Strategy     string       `json:"strategy"`
+	Strategy     AuthStrategy `json:"strategy"`
 	Provider     string       `json:"provider"`
+	ServiceUnit  string       `json:"service_unit,omitempty"` // service responsible for auth (self-managed / Keycloak)
 	AuthzModel   string       `json:"authz_model"`
 	TokenStorage string       `json:"token_storage"`
 	MFA          string       `json:"mfa"`
@@ -112,6 +118,7 @@ type CronJobDef struct {
 // JobQueueDef describes a worker pool or task queue.
 type JobQueueDef struct {
 	Name          string       `json:"name"`
+	Description   string       `json:"description,omitempty"`
 	Technology    string       `json:"technology"`
 	Concurrency   string       `json:"concurrency,omitempty"`
 	MaxRetries    string       `json:"max_retries,omitempty"`
@@ -122,13 +129,10 @@ type JobQueueDef struct {
 	CronJobs      []CronJobDef `json:"cron_jobs,omitempty"`
 }
 
-// EnvConfig describes the deployment environment configuration.
+// EnvConfig describes backend-level configuration (CORS, sessions, linter).
+// Server deployment settings (compute, cloud, orchestrator) live in InfraPillar.Environments.
 type EnvConfig struct {
-	ComputeEnv    string `json:"compute_env"`
-	CloudProvider string `json:"cloud_provider"`
-	Orchestrator  string `json:"orchestrator"`
-	Regions       string `json:"regions,omitempty"`
-	Stages        string `json:"stages,omitempty"`
+	Stages string `json:"stages,omitempty"`
 }
 
 // BackendPillar covers the full backend configuration.
@@ -148,8 +152,10 @@ type BackendPillar struct {
 	BackendLinter string            `json:"backend_linter,omitempty"`
 
 	// Legacy monolith fields kept for backward compatibility.
-	ComputeEnv    ComputeEnv `json:"compute_env,omitempty"`
-	CloudProvider string     `json:"cloud_provider,omitempty"`
-	Language      string     `json:"language,omitempty"`
-	Framework     string     `json:"framework,omitempty"`
+	ComputeEnv      ComputeEnv `json:"compute_env,omitempty"`
+	CloudProvider   string     `json:"cloud_provider,omitempty"`
+	Language        string     `json:"language,omitempty"`
+	LanguageVersion string     `json:"language_version,omitempty"`
+	Framework       string     `json:"framework,omitempty"`
+	FrameworkVersion string    `json:"framework_version,omitempty"`
 }

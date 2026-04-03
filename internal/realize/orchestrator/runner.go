@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/vibe-menu/internal/realize/agent"
+	"github.com/vibe-menu/internal/realize/config"
 	"github.com/vibe-menu/internal/realize/dag"
 	"github.com/vibe-menu/internal/realize/memory"
 	"github.com/vibe-menu/internal/realize/output"
@@ -130,6 +131,13 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 		r.log("[%s] go.mod locked from deps phase", r.task.ID)
 	}
 
+	// Stage files from completed dependency tasks so go build can resolve
+	// cross-task packages (e.g. internal/domain from data.schemas is visible
+	// to svc.monolith.plan's verifier without burning a retry slot).
+	if err := r.stageDependencyFiles(tmpDir); err != nil {
+		r.log("[%s] warning: staging dependency files: %v", r.task.ID, err)
+	}
+
 	for attempt := 0; attempt <= r.maxRetries; attempt++ {
 		if attempt > 0 {
 			r.log("[%s] retry %d/%d", r.task.ID, attempt, r.maxRetries)
@@ -168,7 +176,7 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 				return fmt.Errorf("task %s: agent failed after %d attempts: %w", r.task.ID, attempt+1, err)
 			}
 			if isRateLimitError(err) {
-				wait := time.Duration(attempt+1) * 60 * time.Second
+				wait := time.Duration(attempt+1) * config.RateLimitBackoffBase * time.Second
 				r.log("[%s] rate limited — waiting %s before retry", r.task.ID, wait)
 				select {
 				case <-time.After(wait):
@@ -279,6 +287,31 @@ func (r *TaskRunner) readLockedGoMod(tmpDir string) string {
 		return ""
 	}
 	return string(data)
+}
+
+// stageDependencyFiles copies files committed by upstream tasks into tmpDir so
+// the verifier (go build) can resolve cross-task packages without an LLM retry.
+// Files that already exist in tmpDir are skipped — earlier layers take precedence.
+func (r *TaskRunner) stageDependencyFiles(tmpDir string) error {
+	paths := r.memory.CommittedPaths(r.task.Dependencies)
+	for _, p := range paths {
+		dst := filepath.Join(tmpDir, p)
+		if _, err := os.Stat(dst); err == nil {
+			continue // already present — don't overwrite
+		}
+		src := filepath.Join(r.writer.BaseDir(), p)
+		data, err := os.ReadFile(src)
+		if err != nil {
+			continue // source may not exist (e.g. non-Go task with no-op verifier)
+		}
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(dst, data, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // isImplementationTask reports whether the task is an implementation layer that

@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/vibe-menu/internal/manifest"
 	"github.com/vibe-menu/internal/realize/agent"
+	"github.com/vibe-menu/internal/realize/config"
 	"github.com/vibe-menu/internal/realize/dag"
 	"github.com/vibe-menu/internal/realize/deps"
 	"github.com/vibe-menu/internal/realize/memory"
@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	defaultModel     = "claude-sonnet-4-6"
-	defaultMaxTokens = int64(64000)
+	defaultModel     = config.DefaultModel
+	defaultMaxTokens = config.DefaultMaxTokens
 )
 
 // Config holds all runtime configuration for the orchestrator.
@@ -109,6 +109,22 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	// Build a default agent; per-section agents are resolved below.
 	defaultAgent := agent.NewClaudeAgent(defaultModel, defaultMaxTokens, o.cfg.Verbose)
 
+	// Resolve the minimum Go runtime version from the Go module proxy once here
+	// so every task — plan, infra, frontend — uses the same consistent version.
+	// The result flows into go.mod (via plan task prompt) and Dockerfiles (via
+	// infra task prompt), preventing mismatches between the two.
+	resolvedGoVersion := deps.ResolveGoVersion(ctx)
+	if resolvedGoVersion != "" {
+		o.log("realize: resolved Go version %s from dev tool requirements", resolvedGoVersion)
+	}
+
+	// Resolve all Go library module versions from the Go module proxy once at
+	// startup. Every service task prompt then uses live versions instead of
+	// hardcoded fallbacks, preventing version staleness across all frameworks,
+	// drivers, and utility libraries.
+	resolvedGoModules := deps.ResolveGoModuleVersions(ctx)
+	o.log("realize: resolved %d Go library versions from module proxy", len(resolvedGoModules))
+
 	// Log configured per-section model assignments.
 	for sectionID, pa := range providers {
 		if pa.Credential != "" {
@@ -124,7 +140,7 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	for waveIdx, wave := range d.Levels() {
 		o.log("realize: wave %d (%d tasks): %v", waveIdx, len(wave), wave)
 
-		if err := o.runWave(ctx, wave, d, providers, reg, defaultAgent, verifiers, writer, st, mem); err != nil {
+		if err := o.runWave(ctx, wave, d, providers, reg, defaultAgent, verifiers, writer, st, mem, resolvedGoVersion, resolvedGoModules); err != nil {
 			return fmt.Errorf("wave %d: %w", waveIdx, err)
 		}
 	}
@@ -146,6 +162,8 @@ func (o *Orchestrator) runWave(
 	writer *output.Writer,
 	st *state.Store,
 	mem *memory.SharedMemory,
+	resolvedGoVersion string,
+	resolvedGoModules map[string]deps.ModuleInfo,
 ) error {
 	sem := make(chan struct{}, o.cfg.Parallelism)
 	g, gctx := errgroup.WithContext(ctx)
@@ -201,72 +219,13 @@ func (o *Orchestrator) runWave(
 				verbose:     o.cfg.Verbose,
 				logFn:       o.cfg.LogFunc,
 				baseModel:   baseModel,
-				depsContext: buildDepsContext(gctx, task),
+				depsContext: buildDepsContext(gctx, task, resolvedGoVersion, resolvedGoModules),
 			}
 			return runner.Run(gctx)
 		})
 	}
 
 	return g.Wait()
-}
-
-// resolveAgent returns a task-specific agent if the manifest has a provider
-// assignment for the task's section, otherwise returns the default agent.
-func resolveAgent(taskID string, providers manifest.ProviderAssignments, def agent.Agent, verbose bool) agent.Agent {
-	pa, ok := providerFor(taskID, providers)
-	if !ok || pa.Credential == "" {
-		return def
-	}
-	model := resolveModelID(pa.Provider, pa.Model, pa.Version)
-	switch pa.Provider {
-	case "Claude":
-		return agent.NewClaudeAgentWithKey(model, defaultMaxTokens, verbose, pa.Credential)
-	case "ChatGPT":
-		return agent.NewOpenAIAgent("https://api.openai.com", pa.Credential, model, defaultMaxTokens, verbose)
-	case "Gemini":
-		return agent.NewGeminiAgent(pa.Credential, model, defaultMaxTokens, verbose)
-	case "Mistral":
-		return agent.NewOpenAIAgent("https://api.mistral.ai", pa.Credential, model, defaultMaxTokens, verbose)
-	case "Llama":
-		return agent.NewOpenAIAgent("https://api.groq.com/openai", pa.Credential, model, defaultMaxTokens, verbose)
-	default:
-		return def
-	}
-}
-
-// providerFor returns the ProviderAssignment for the section that owns taskID.
-// Task IDs follow "<section>.<name>" or just "<section>".
-func providerFor(taskID string, providers manifest.ProviderAssignments) (manifest.ProviderAssignment, bool) {
-	if providers == nil {
-		return manifest.ProviderAssignment{}, false
-	}
-	sectionID := taskID
-	if dot := strings.Index(taskID, "."); dot >= 0 {
-		sectionID = taskID[:dot]
-	}
-	pa, ok := providers[sectionID]
-	return pa, ok
-}
-
-// describeProvider returns a human-readable model label for dry-run output.
-// For manifest-configured providers it shows the provider name/tier; for
-// default-agent tasks it shows the tier-selected model.
-func describeProvider(taskID string, providers manifest.ProviderAssignments, kind dag.TaskKind) string {
-	if kind == dag.TaskKindDependencyResolution {
-		return "(package manager — no LLM)"
-	}
-	pa, ok := providerFor(taskID, providers)
-	if !ok || pa.Credential == "" {
-		return tierForKind(kind)
-	}
-	s := pa.Provider
-	if pa.Model != "" {
-		s += " " + pa.Model
-	}
-	if pa.Version != "" {
-		s += " " + pa.Version
-	}
-	return s
 }
 
 // printPlan prints the task DAG in dry-run mode without invoking any agents.
@@ -288,50 +247,6 @@ func (o *Orchestrator) printPlan(d *dag.DAG, providers manifest.ProviderAssignme
 	return nil
 }
 
-// buildProviderAssignments constructs a per-section ProviderAssignments map from the
-// manifest's ConfiguredProviders registry and per-section SectionModels overrides.
-//
-// SectionModels values are formatted as "Provider · Tier" (e.g. "Claude · Sonnet").
-// Sections with no override or "default" are omitted; the orchestrator falls back to
-// its default agent for those.
-func buildProviderAssignments(m *manifest.Manifest) manifest.ProviderAssignments {
-	if len(m.ConfiguredProviders) == 0 {
-		return nil
-	}
-
-	sections := []string{"backend", "data", "contracts", "frontend", "infra", "crosscut"}
-	result := make(manifest.ProviderAssignments)
-
-	for _, section := range sections {
-		sectionModel, ok := m.Realize.SectionModels[section]
-		if !ok || sectionModel == "" || sectionModel == "default" {
-			continue
-		}
-
-		// Parse "Provider · Tier" format.
-		parts := strings.SplitN(sectionModel, " · ", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		provLabel, tier := parts[0], parts[1]
-
-		pa, exists := m.ConfiguredProviders[provLabel]
-		if !exists || pa.Credential == "" {
-			continue
-		}
-
-		// Use the configured provider's credentials with the specified tier.
-		pa.Model = tier
-		pa.Version = "" // use the fallback version for that tier
-		result[section] = pa
-	}
-
-	if len(result) == 0 {
-		return nil
-	}
-	return result
-}
-
 // loadManifest reads and parses a manifest.json file.
 func loadManifest(path string) (*manifest.Manifest, error) {
 	data, err := os.ReadFile(path)
@@ -350,7 +265,12 @@ func loadManifest(path string) (*manifest.Manifest, error) {
 // For infra and frontend tasks, it resolves live package versions from npm and the
 // Go module proxy (falling back to the static entries in WellKnownNpmPackages /
 // WellKnownGoDevTools when the registries are unreachable).
-func buildDepsContext(ctx context.Context, task *dag.Task) string {
+// resolvedGoVersion is the minimum Go runtime version resolved once at startup via
+// deps.ResolveGoVersion; it is injected into service task prompts so the plan LLM
+// generates a go.mod whose `go X.Y` directive matches the infra Dockerfile base image.
+// resolvedGoModules is the live-fetched module version map from deps.ResolveGoModuleVersions;
+// it replaces hardcoded fallback versions for all Go framework and library dependencies.
+func buildDepsContext(ctx context.Context, task *dag.Task, resolvedGoVersion string, resolvedGoModules map[string]deps.ModuleInfo) string {
 	switch task.Kind {
 	case dag.TaskKindInfraDocker, dag.TaskKindInfraCI, dag.TaskKindInfraTerraform:
 		hasGoServices := len(task.Payload.AllServices) > 0
@@ -373,7 +293,7 @@ func buildDepsContext(ctx context.Context, task *dag.Task) string {
 		if task.Payload.Auth != nil {
 			technologies = append(technologies, task.Payload.Auth.Strategy)
 		}
-		return deps.PromptContext(task.Payload.Service.Framework, technologies)
+		return deps.PromptContext(task.Payload.Service.Framework, technologies, resolvedGoVersion, resolvedGoModules)
 	}
 }
 

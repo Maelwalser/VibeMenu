@@ -189,7 +189,7 @@ func defaultFEThemeFields() []Field {
 	}
 }
 
-func defaultPageFormFields(authRoleOptions, pageRouteOptions []string) []Field {
+func defaultPageFormFields(authRoleOptions, pageRouteOptions, componentNameOptions []string) []Field {
 	return []Field{
 		{Key: "name", Label: "name          ", Kind: KindText},
 		{Key: "route", Label: "route         ", Kind: KindText},
@@ -233,11 +233,15 @@ func defaultPageFormFields(authRoleOptions, pageRouteOptions []string) []Field {
 			Options: pageRouteOptions,
 			Value:   placeholderFor(pageRouteOptions, "(no pages configured)"),
 		},
+		{
+			Key: "component_refs", Label: "components    ", Kind: KindMultiSelect,
+			Options: componentNameOptions,
+			Value:   placeholderFor(componentNameOptions, "(no components defined)"),
+		},
 	}
 }
 
-func defaultComponentFormFields(endpointOptions, dtoOptions []string) []Field {
-	dtoWithNone := append([]string{"None"}, dtoOptions...)
+func defaultComponentFormFields(endpointOptions []string) []Field {
 	return []Field{
 		{Key: "name", Label: "name          ", Kind: KindText},
 		{
@@ -250,15 +254,121 @@ func defaultComponentFormFields(endpointOptions, dtoOptions []string) []Field {
 			Options: endpointOptions,
 			Value:   placeholderFor(endpointOptions, "(no endpoints configured)"),
 		},
+		{Key: "description", Label: "description   ", Kind: KindText},
+	}
+}
+
+// actionTypesForComponent returns the action_type options appropriate for a given component type.
+func actionTypesForComponent(compType string) []string {
+	switch compType {
+	case "Form":
+		return []string{"Submit Form", "Fetch Data", "Reset Form", "Navigate", "Show Toast", "Update State", "Open Modal", "Custom"}
+	case "Table":
+		return []string{"Fetch Data", "Navigate", "Delete", "Refresh", "Export", "Show Toast", "Update State", "Open Modal", "Custom"}
+	case "Card":
+		return []string{"Navigate", "Fetch Data", "Open Modal", "Show Toast", "Update State", "Custom"}
+	case "List":
+		return []string{"Navigate", "Fetch Data", "Delete", "Refresh", "Open Modal", "Show Toast", "Update State", "Custom"}
+	case "Chart":
+		return []string{"Fetch Data", "Update State", "Download", "Custom"}
+	case "Modal":
+		return []string{"Submit Form", "Close Modal", "Navigate", "Fetch Data", "Show Toast", "Update State", "Custom"}
+	case "Button":
+		return []string{"Navigate", "Submit Form", "Open Modal", "Close Modal", "Show Toast", "Update State", "Download", "Upload", "Custom"}
+	case "Navigation":
+		return []string{"Navigate", "Custom"}
+	default:
+		return []string{"Fetch Data", "Submit Form", "Navigate", "Show Toast", "Update State", "Open Modal", "Close Modal", "Reset Form", "Download", "Upload", "Delete", "Refresh", "Export", "Custom"}
+	}
+}
+
+// apiActionTypes is the set of action_type values that involve an API endpoint call.
+var apiActionTypes = map[string]bool{
+	"Fetch Data": true, "Submit Form": true, "Download": true,
+	"Upload": true, "Delete": true, "Refresh": true, "Export": true,
+}
+
+// isActionFieldHidden returns true when the given action form field should be hidden
+// based on the current action_type selection.
+func isActionFieldHidden(fields []Field, idx int) bool {
+	key := fields[idx].Key
+	if key != "endpoint" && key != "target_page" {
+		return false
+	}
+	actionType := ""
+	for _, f := range fields {
+		if f.Key == "action_type" {
+			actionType = f.DisplayValue()
+			break
+		}
+	}
+	if key == "endpoint" {
+		return !apiActionTypes[actionType]
+	}
+	// target_page: only visible for Navigate
+	return actionType != "Navigate"
+}
+
+// actionVisibleFields returns only the action form fields that should be rendered.
+func actionVisibleFields(fields []Field) []Field {
+	out := make([]Field, 0, len(fields))
+	for i := range fields {
+		if !isActionFieldHidden(fields, i) {
+			out = append(out, fields[i])
+		}
+	}
+	return out
+}
+
+// actionVisibleIdx maps a full-list form index to its position within the visible list.
+func actionVisibleIdx(fields []Field, fullIdx int) int {
+	vis := 0
+	for i := range fullIdx {
+		if !isActionFieldHidden(fields, i) {
+			vis++
+		}
+	}
+	return vis
+}
+
+// nextActionFormIdx advances the action form cursor, skipping hidden fields.
+func nextActionFormIdx(fields []Field, cur int) int {
+	return nextFormIdx(fields, cur, isActionFieldHidden)
+}
+
+// prevActionFormIdx retreats the action form cursor, skipping hidden fields.
+func prevActionFormIdx(fields []Field, cur int) int {
+	return prevFormIdx(fields, cur, isActionFieldHidden)
+}
+
+func defaultActionFormFields(compType string, endpointOptions, pageRoutes []string) []Field {
+	endpointWithNone := append([]string{"None"}, endpointOptions...)
+	pageWithNone := append([]string{"(none)"}, pageRoutes...)
+	actionTypes := actionTypesForComponent(compType)
+	defaultAction := ""
+	if len(actionTypes) > 0 {
+		defaultAction = actionTypes[0]
+	}
+	return []Field{
 		{
-			Key: "request_dto", Label: "request_dto   ", Kind: KindSelect,
-			Options: dtoWithNone,
+			Key: "trigger", Label: "trigger       ", Kind: KindSelect,
+			Options: []string{"onClick", "onSubmit", "onLoad", "onMount", "onChange", "onHover", "onScroll", "onKeyPress", "Custom"},
+			Value:   "onClick",
+		},
+		{
+			Key: "action_type", Label: "action_type   ", Kind: KindSelect,
+			Options: actionTypes,
+			Value:   defaultAction,
+		},
+		{
+			Key: "endpoint", Label: "endpoint      ", Kind: KindSelect,
+			Options: endpointWithNone,
 			Value:   "None",
 		},
 		{
-			Key: "response_dto", Label: "response_dto  ", Kind: KindSelect,
-			Options: dtoWithNone,
-			Value:   "None",
+			Key: "target_page", Label: "target_page   ", Kind: KindSelect,
+			Options: pageWithNone,
+			Value:   placeholderFor(pageRoutes, "(no pages configured)"),
 		},
 		{Key: "description", Label: "description   ", Kind: KindText},
 	}

@@ -39,30 +39,38 @@ type FrontendTheme struct {
 	Description  string `json:"description,omitempty"`
 }
 
+// ComponentActionDef describes a user interaction action wired to a component.
+type ComponentActionDef struct {
+	Trigger     string `json:"trigger"`
+	ActionType  string `json:"action_type"`
+	Endpoint    string `json:"endpoint,omitempty"`
+	TargetPage  string `json:"target_page,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
 // PageComponentDef describes a UI component within a page.
 type PageComponentDef struct {
-	Name               string `json:"name"`
-	ComponentType      string `json:"component_type"`
-	ConnectedEndpoints string `json:"connected_endpoints,omitempty"`
-	RequestDTO         string `json:"request_dto,omitempty"`
-	ResponseDTO        string `json:"response_dto,omitempty"`
-	Description        string `json:"description,omitempty"`
+	Name               string               `json:"name"`
+	ComponentType      string               `json:"component_type"`
+	ConnectedEndpoints string               `json:"connected_endpoints,omitempty"`
+	Actions            []ComponentActionDef `json:"actions,omitempty"`
+	Description        string               `json:"description,omitempty"`
 }
 
 // PageDef describes a frontend page.
 type PageDef struct {
-	Name          string             `json:"name"`
-	Route         string             `json:"route"`
-	AuthRequired  string             `json:"auth_required"`
-	Layout        string             `json:"layout"`
-	Purpose       string             `json:"purpose,omitempty"`
-	Description   string             `json:"description,omitempty"`
-	CoreActions   string             `json:"core_actions,omitempty"`
-	Loading       string             `json:"loading"`
-	ErrorHandling string             `json:"error_handling"`
-	AuthRoles     string             `json:"auth_roles,omitempty"`
-	LinkedPages   string             `json:"linked_pages,omitempty"`
-	Components    []PageComponentDef `json:"components,omitempty"`
+	Name          string `json:"name"`
+	Route         string `json:"route"`
+	AuthRequired  string `json:"auth_required"`
+	Layout        string `json:"layout"`
+	Purpose       string `json:"purpose,omitempty"`
+	Description   string `json:"description,omitempty"`
+	CoreActions   string `json:"core_actions,omitempty"`
+	Loading       string `json:"loading"`
+	ErrorHandling string `json:"error_handling"`
+	AuthRoles     string `json:"auth_roles,omitempty"`
+	LinkedPages   string `json:"linked_pages,omitempty"`
+	ComponentRefs string `json:"component_refs,omitempty"` // comma-sep names from the component library
 }
 
 // NavigationConfig describes frontend navigation settings.
@@ -115,6 +123,7 @@ type AssetDef struct {
 type FrontendPillar struct {
 	Tech       FrontendTechConfig `json:"tech"`
 	Theme      FrontendTheme      `json:"theme"`
+	Components []PageComponentDef `json:"components,omitempty"` // shared component library
 	Pages      []PageDef          `json:"pages,omitempty"`
 	Assets     []AssetDef         `json:"assets,omitempty"`
 	Navigation NavigationConfig   `json:"navigation"`

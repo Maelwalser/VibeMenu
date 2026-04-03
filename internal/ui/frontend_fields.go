@@ -480,6 +480,8 @@ func defaultNavFields() []Field {
 // themeColorPalette is the curated set of hex colors offered in the Theme → colors picker.
 // Colors are grouped by hue family for easy visual scanning in the dropdown.
 var themeColorPalette = []string{
+	// Custom hex entry (always first)
+	"Custom",
 	// Neutrals
 	"#ffffff", "#f8fafc", "#e2e8f0", "#94a3b8", "#64748b",
 	"#334155", "#1e293b", "#0f172a", "#000000",

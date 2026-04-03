@@ -138,6 +138,11 @@ func (fe FrontendEditor) updateThemeDropdown(key tea.KeyMsg) (FrontendEditor, te
 		if f.Kind == KindMultiSelect {
 			f.ToggleMultiSelect(fe.dd.OptIdx)
 			f.DDCursor = fe.dd.OptIdx
+			// If this is the Custom hex option and it was just selected, enter insert mode.
+			if f.ColorSwatch && fe.dd.OptIdx < len(f.Options) && isCustomOption(f.Options[fe.dd.OptIdx]) && f.IsMultiSelected(fe.dd.OptIdx) {
+				fe.dd.Open = false
+				return fe.tryEnterInsert()
+			}
 		} else {
 			f.SelIdx = fe.dd.OptIdx
 			if fe.dd.OptIdx < len(f.Options) {
@@ -150,7 +155,12 @@ func (fe FrontendEditor) updateThemeDropdown(key tea.KeyMsg) (FrontendEditor, te
 		}
 	case "enter":
 		if f.Kind == KindMultiSelect {
+			f.ToggleMultiSelect(fe.dd.OptIdx)
 			f.DDCursor = fe.dd.OptIdx
+			if f.ColorSwatch && fe.dd.OptIdx < len(f.Options) && isCustomOption(f.Options[fe.dd.OptIdx]) && f.IsMultiSelected(fe.dd.OptIdx) {
+				fe.dd.Open = false
+				return fe.tryEnterInsert()
+			}
 		} else {
 			f.SelIdx = fe.dd.OptIdx
 			if fe.dd.OptIdx < len(f.Options) {
@@ -159,8 +169,8 @@ func (fe FrontendEditor) updateThemeDropdown(key tea.KeyMsg) (FrontendEditor, te
 			if f.PrepareCustomEntry() {
 				return fe.tryEnterInsert()
 			}
+			fe.dd.Open = false
 		}
-		fe.dd.Open = false
 	case "esc", "b":
 		if f.Kind == KindMultiSelect {
 			f.DDCursor = fe.dd.OptIdx
@@ -373,16 +383,18 @@ func (fe FrontendEditor) updatePageFormDropdown(key tea.KeyMsg) (FrontendEditor,
 		}
 	case "enter":
 		if f.Kind == KindMultiSelect {
+			f.ToggleMultiSelect(fe.dd.OptIdx)
 			f.DDCursor = fe.dd.OptIdx
 		} else if f.Kind == KindSelect {
 			f.SelIdx = fe.dd.OptIdx
 			if fe.dd.OptIdx < len(f.Options) {
 				f.Value = f.Options[fe.dd.OptIdx]
 			}
-		}
-		fe.dd.Open = false
-		if f.Kind == KindSelect && f.PrepareCustomEntry() {
-			return fe.tryEnterInsert()
+			fe.dd.Open = false
+			if f.PrepareCustomEntry() {
+				fe.savePageForm()
+				return fe.tryEnterInsert()
+			}
 		}
 	case "esc", "b":
 		if f.Kind == KindMultiSelect {
@@ -532,14 +544,15 @@ func (fe FrontendEditor) updateCompFormDropdown(key tea.KeyMsg) (FrontendEditor,
 		}
 	case "enter":
 		if f.Kind == KindMultiSelect {
+			f.ToggleMultiSelect(fe.dd.OptIdx)
 			f.DDCursor = fe.dd.OptIdx
 		} else if f.Kind == KindSelect {
 			f.SelIdx = fe.dd.OptIdx
 			if fe.dd.OptIdx < len(f.Options) {
 				f.Value = f.Options[fe.dd.OptIdx]
 			}
+			fe.dd.Open = false
 		}
-		fe.dd.Open = false
 	case "esc", "b":
 		if f.Kind == KindMultiSelect {
 			f.DDCursor = fe.dd.OptIdx

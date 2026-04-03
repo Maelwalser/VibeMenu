@@ -155,6 +155,67 @@ func (f *Field) ToggleMultiSelect(optIdx int) {
 	f.SelectedIdxs = append(f.SelectedIdxs, optIdx)
 }
 
+// AddCustomHexColor inserts hex (must start with "#") as a real option directly
+// after the "Custom" sentinel, shifts all existing SelectedIdxs accordingly,
+// selects the new entry, and deselects the "Custom" sentinel so it stays available
+// for adding more colors. If hex already exists in Options it is simply selected.
+// Returns true when hex was accepted (starts with "#" and field is ColorSwatch).
+func (f *Field) AddCustomHexColor(hex string) bool {
+	if !f.ColorSwatch || !strings.HasPrefix(hex, "#") {
+		return false
+	}
+	customIdx := -1
+	for i, opt := range f.Options {
+		if isCustomOption(opt) {
+			customIdx = i
+			break
+		}
+	}
+	if customIdx < 0 {
+		return false
+	}
+	// If hex already exists, just select it (deselect Custom too).
+	for i, opt := range f.Options {
+		if opt == hex {
+			if !f.IsMultiSelected(i) {
+				f.SelectedIdxs = append(f.SelectedIdxs, i)
+			}
+			f.DeselectCustom()
+			return true
+		}
+	}
+	// Insert hex right after "Custom".
+	insertAt := customIdx + 1
+	for i := range f.SelectedIdxs {
+		if f.SelectedIdxs[i] >= insertAt {
+			f.SelectedIdxs[i]++
+		}
+	}
+	newOpts := make([]string, 0, len(f.Options)+1)
+	newOpts = append(newOpts, f.Options[:insertAt]...)
+	newOpts = append(newOpts, hex)
+	newOpts = append(newOpts, f.Options[insertAt:]...)
+	f.Options = newOpts
+	f.SelectedIdxs = append(f.SelectedIdxs, insertAt)
+	f.DeselectCustom()
+	return true
+}
+
+// DeselectCustom removes the "Custom"/"Other" sentinel from SelectedIdxs if present.
+func (f *Field) DeselectCustom() {
+	for i, opt := range f.Options {
+		if isCustomOption(opt) {
+			for j, idx := range f.SelectedIdxs {
+				if idx == i {
+					f.SelectedIdxs = append(f.SelectedIdxs[:j], f.SelectedIdxs[j+1:]...)
+					return
+				}
+			}
+			return
+		}
+	}
+}
+
 // IsMultiSelected returns whether optIdx is currently selected.
 func (f Field) IsMultiSelected(optIdx int) bool {
 	for _, idx := range f.SelectedIdxs {

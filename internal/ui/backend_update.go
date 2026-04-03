@@ -216,16 +216,8 @@ func (be *BackendEditor) applyDropdown() bool {
 	if f := be.mutableFieldPtr(); f != nil && f.Kind == KindSelect && be.dd.OptIdx < len(f.Options) {
 		f.SelIdx = be.dd.OptIdx
 		f.Value = f.Options[be.dd.OptIdx]
-		if be.activeTab() == beTabEnv {
-			switch f.Key {
-			case "monolith_lang":
-				be.updateEnvMonolithOptions()
-			case "compute_env":
-				be.updateEnvOrchestratorOptions()
-			}
-		}
-		if be.activeTab() == beTabEnv && f.Key == "orchestrator" {
-			be.updateServiceDiscoveryOptions()
+		if be.activeTab() == beTabEnv && f.Key == "monolith_lang" {
+			be.updateEnvMonolithOptions()
 		}
 	}
 	return applyTo(be.mutableFieldPtr())
@@ -504,16 +496,8 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 		be.gBuf = false
 		if f := be.mutableFieldPtr(); f != nil && f.Kind == KindSelect {
 			f.CyclePrev()
-			if be.activeTab() == beTabEnv {
-				switch f.Key {
-				case "monolith_lang":
-					be.updateEnvMonolithOptions()
-				case "compute_env":
-					be.updateEnvOrchestratorOptions()
-				}
-			}
-			if be.activeTab() == beTabEnv && f.Key == "orchestrator" {
-				be.updateServiceDiscoveryOptions()
+			if be.activeTab() == beTabEnv && f.Key == "monolith_lang" {
+				be.updateEnvMonolithOptions()
 			}
 		}
 	case "i", "a":

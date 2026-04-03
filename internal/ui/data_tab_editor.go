@@ -892,6 +892,12 @@ func (dt DataTabEditor) updateDropdown(key tea.KeyMsg) (DataTabEditor, tea.Cmd) 
 		if f.Kind == KindMultiSelect {
 			f.ToggleMultiSelect(dt.ddOptIdx)
 			f.DDCursor = dt.ddOptIdx
+			// When a custom option is toggled ON, close the dropdown and let the user type.
+			if dt.ddOptIdx < len(f.Options) && isCustomOption(f.Options[dt.ddOptIdx]) && f.IsMultiSelected(dt.ddOptIdx) {
+				f.CustomText = ""
+				dt.ddOpen = false
+				return dt.tryEnterInsert()
+			}
 		} else if f.Kind == KindSelect {
 			f.SelIdx = dt.ddOptIdx
 			f.Value = f.Options[dt.ddOptIdx]
@@ -903,6 +909,15 @@ func (dt DataTabEditor) updateDropdown(key tea.KeyMsg) (DataTabEditor, tea.Cmd) 
 	case "enter":
 		if f.Kind == KindMultiSelect {
 			f.DDCursor = dt.ddOptIdx
+			// Enter on a custom option: toggle it on (if not already) and enter insert mode.
+			if dt.ddOptIdx < len(f.Options) && isCustomOption(f.Options[dt.ddOptIdx]) {
+				if !f.IsMultiSelected(dt.ddOptIdx) {
+					f.ToggleMultiSelect(dt.ddOptIdx)
+				}
+				f.CustomText = ""
+				dt.ddOpen = false
+				return dt.tryEnterInsert()
+			}
 		} else if f.Kind == KindSelect {
 			f.SelIdx = dt.ddOptIdx
 			f.Value = f.Options[dt.ddOptIdx]

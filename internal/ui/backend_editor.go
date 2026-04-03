@@ -981,6 +981,8 @@ func (be BackendEditor) FromBackendPillar(bp manifest.BackendPillar) BackendEdit
 	for i, svc := range bp.Services {
 		be.serviceEditor.items[i] = serviceFieldsFromDef(svc)
 	}
+	// Apply orchestrator-based service discovery options now that items are populated.
+	be.updateServiceDiscoveryOptions()
 
 	be.CommLinks = bp.CommLinks
 	be.commEditor.items = make([][]Field, len(bp.CommLinks))
@@ -1354,6 +1356,9 @@ func (be *BackendEditor) applyDropdown() bool {
 				be.updateEnvOrchestratorOptions()
 			}
 		}
+		if be.activeTab() == beTabEnv && f.Key == "orchestrator" {
+			be.updateServiceDiscoveryOptions()
+		}
 	}
 	return applyTo(be.mutableFieldPtr())
 }
@@ -1639,6 +1644,9 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 					be.updateEnvOrchestratorOptions()
 				}
 			}
+			if be.activeTab() == beTabEnv && f.Key == "orchestrator" {
+				be.updateServiceDiscoveryOptions()
+			}
 		}
 	case "i", "a":
 		be.countBuf = ""
@@ -1666,7 +1674,9 @@ func (be BackendEditor) updateServiceList(key tea.KeyMsg) (BackendEditor, tea.Cm
 	case "a":
 		svc := manifest.ServiceDef{}
 		be.Services = append(be.Services, svc)
-		ed.items = append(ed.items, defaultServiceFields())
+		newFields := defaultServiceFields()
+		be.applyServiceDiscoveryOpts(newFields)
+		ed.items = append(ed.items, newFields)
 		ed.itemIdx = len(ed.items) - 1
 		ed.form = copyFields(ed.items[ed.itemIdx])
 		existing := make([]string, 0, len(be.Services)-1)
@@ -1804,13 +1814,63 @@ func (be *BackendEditor) updateServiceFrameworkOptions(ed *beListEditor) {
 	}
 }
 
+// serviceDiscoveryByOrchestrator maps orchestrator → valid service discovery options.
+var serviceDiscoveryByOrchestrator = map[string][]string{
+	"K3s":            {"Kubernetes DNS", "Consul", "Static config"},
+	"K8s (managed)":  {"Kubernetes DNS", "Consul", "Static config"},
+	"Docker Compose": {"DNS-based", "Static config"},
+	"ECS":            {"DNS-based (Cloud Map)", "Consul"},
+	"Nomad":          {"Consul", "DNS-based"},
+	"Cloud Run":      {"DNS-based"},
+	"None":           {"Static config", "None"},
+}
+
+// applyServiceDiscoveryOpts sets the service_discovery options in a field slice
+// to match the currently selected orchestrator, preserving the current value if valid.
+func (be *BackendEditor) applyServiceDiscoveryOpts(fields []Field) {
+	orch := fieldGet(be.EnvFields, "orchestrator")
+	opts, ok := serviceDiscoveryByOrchestrator[orch]
+	if !ok {
+		opts = []string{"Static config", "None"}
+	}
+	for i := range fields {
+		if fields[i].Key == "service_discovery" {
+			current := fields[i].Value
+			fields[i].Options = opts
+			found := false
+			for j, o := range opts {
+				if o == current {
+					fields[i].SelIdx = j
+					found = true
+					break
+				}
+			}
+			if !found {
+				fields[i].SelIdx = 0
+				fields[i].Value = opts[0]
+			}
+			break
+		}
+	}
+}
+
+// updateServiceDiscoveryOptions refreshes the service_discovery dropdown
+// in the service form and all existing service items to show only the options
+// valid for the currently selected orchestrator.
+func (be *BackendEditor) updateServiceDiscoveryOptions() {
+	be.applyServiceDiscoveryOpts(be.serviceEditor.form)
+	for _, item := range be.serviceEditor.items {
+		be.applyServiceDiscoveryOpts(item)
+	}
+}
+
 // orchestratorByComputeEnv maps compute_env values to the valid orchestrator options.
 var orchestratorByComputeEnv = map[string][]string{
-	"Bare Metal":           {"Docker Compose", "K3s", "Nomad", "None"},
-	"VM":                   {"Docker Compose", "K3s", "Nomad", "None"},
-	"Containers (Docker)":  {"Docker Compose", "K3s", "K8s (managed)", "Nomad", "ECS", "None"},
-	"Kubernetes":           {"K3s", "K8s (managed)"},
-	"Serverless (FaaS)":    {"Cloud Run", "None"},
+	"Bare Metal":          {"Docker Compose", "K3s", "Nomad", "None"},
+	"VM":                  {"Docker Compose", "K3s", "Nomad", "None"},
+	"Containers (Docker)": {"Docker Compose", "K3s", "K8s (managed)", "Nomad", "ECS", "None"},
+	"Kubernetes":          {"K3s", "K8s (managed)"},
+	"Serverless (FaaS)":   {"Cloud Run", "None"},
 	// PaaS: orchestrator field is hidden entirely via visibleEnvFields.
 }
 
@@ -3570,6 +3630,46 @@ func (be BackendEditor) Languages() []string {
 		add(fieldGet(item, "language"))
 	}
 	return langs
+}
+
+// ArchPattern returns the currently selected architecture pattern value (e.g. "monolith", "microservices").
+func (be BackendEditor) ArchPattern() string {
+	return be.currentArch()
+}
+
+// ServiceFrameworks returns the unique set of frameworks used across all configured
+// backend services (e.g. "tRPC", "NestJS"). For monolith arch the monolith framework
+// is included instead of the service list.
+func (be BackendEditor) ServiceFrameworks() []string {
+	seen := make(map[string]bool)
+	var fws []string
+	add := func(fw string) {
+		if fw != "" && !seen[fw] {
+			seen[fw] = true
+			fws = append(fws, fw)
+		}
+	}
+	if be.currentArch() == "monolith" {
+		add(fieldGet(be.EnvFields, "monolith_fw"))
+	}
+	for _, item := range be.serviceEditor.items {
+		add(fieldGet(item, "framework"))
+	}
+	return fws
+}
+
+// CommProtocols returns the unique set of protocols used across all communication links.
+func (be BackendEditor) CommProtocols() []string {
+	seen := make(map[string]bool)
+	var protos []string
+	for _, link := range be.CommLinks {
+		p := link.Protocol
+		if p != "" && !seen[p] {
+			seen[p] = true
+			protos = append(protos, p)
+		}
+	}
+	return protos
 }
 
 // copyFields makes a deep copy of a field slice.

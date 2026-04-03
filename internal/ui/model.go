@@ -372,6 +372,7 @@ func (m Model) delegateUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.contractsEditor, cmd = m.contractsEditor.Update(msg)
 	case "frontend":
 		m.frontendEditor.SetAuthRoles(m.backendEditor.AuthRoleOptions())
+		m.frontendEditor.SetBackendProtocols(m.backendEditor.CommProtocols(), m.backendEditor.ServiceFrameworks())
 		m.frontendEditor, cmd = m.frontendEditor.Update(msg)
 	case "infrastructure":
 		m.infraEditor.SetCloudProvider(m.backendEditor.CloudProvider())
@@ -381,6 +382,8 @@ func (m Model) delegateUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "crosscut":
 		m.crossCutEditor.SetTestingContext(
 			m.backendEditor.Languages(),
+			m.backendEditor.CommProtocols(),
+			m.backendEditor.ArchPattern(),
 			m.frontendEditor.Language(),
 			m.frontendEditor.Framework(),
 		)

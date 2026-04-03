@@ -186,7 +186,7 @@ func defaultStandardsFields() []Field {
 	return []Field{
 		{
 			Key: "branch_strategy", Label: "Branch Strat. ", Kind: KindSelect,
-			Options: []string{"GitHub Flow", "GitFlow", "Trunk-based", "Custom"},
+			Options: []string{"GitHub Flow", "GitFlow", "Trunk-based"},
 			Value:   "GitHub Flow",
 		},
 		{
@@ -195,24 +195,9 @@ func defaultStandardsFields() []Field {
 			Value:   "Dependabot",
 		},
 		{
-			Key: "code_review", Label: "Code Review   ", Kind: KindSelect,
-			Options: []string{"Required (1 approval)", "Required (2 approvals)", "Optional", "None"},
-			Value:   "Required (1 approval)",
-		},
-		{
 			Key: "feature_flags", Label: "Feature Flags ", Kind: KindSelect,
 			Options: []string{"LaunchDarkly", "Unleash", "Flagsmith", "Custom (env vars)", "None"},
 			Value:   "None", SelIdx: 4,
-		},
-		{
-			Key: "uptime_slo", Label: "Uptime SLO    ", Kind: KindSelect,
-			Options: []string{"99.9%", "99.95%", "99.99%", "Custom"},
-			Value:   "99.9%",
-		},
-		{
-			Key: "latency_p99", Label: "Latency P99   ", Kind: KindSelect,
-			Options: []string{"<50ms", "<100ms", "<200ms", "<500ms", "<1s", "Custom"},
-			Value:   "<200ms", SelIdx: 2,
 		},
 	}
 }
@@ -233,8 +218,8 @@ func defaultDocsFields() []Field {
 		},
 		{
 			Key: "changelog", Label: "changelog     ", Kind: KindSelect,
-			Options: []string{"Conventional Commits", "Manual", "None"},
-			Value:   "Conventional Commits",
+			Options: []string{"Manual", "None"},
+			Value:   "Manual",
 		},
 	}
 }

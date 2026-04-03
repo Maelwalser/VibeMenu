@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -493,7 +495,7 @@ func (fe FrontendEditor) updateInsert(msg tea.Msg) (FrontendEditor, tea.Cmd) {
 	key, ok := msg.(tea.KeyMsg)
 	if ok {
 		switch key.String() {
-		case "esc":
+		case "esc", "enter":
 			fe.saveInput()
 			fe.internalMode = ModeNormal
 			fe.formInput.Blur()
@@ -585,8 +587,21 @@ func (fe *FrontendEditor) saveInput() {
 			fe.techFields[fe.techFormIdx].SaveTextInput(val)
 		}
 	case feTabTheme:
-		if fe.themeFormIdx < len(fe.themeFields) && fe.themeFields[fe.themeFormIdx].CanEditAsText() {
-			fe.themeFields[fe.themeFormIdx].SaveTextInput(val)
+		if fe.themeFormIdx < len(fe.themeFields) {
+			f := &fe.themeFields[fe.themeFormIdx]
+			if f.CanEditAsText() {
+				if f.ColorSwatch {
+					hex := strings.TrimSpace(val)
+					if !strings.HasPrefix(hex, "#") && len(hex) > 0 {
+						hex = "#" + hex // auto-prepend # if omitted
+					}
+					if !f.AddCustomHexColor(hex) {
+						f.DeselectCustom() // invalid input: undo Custom selection
+					}
+				} else {
+					f.SaveTextInput(val)
+				}
+			}
 		}
 	case feTabComponents:
 		if fe.inCompAction && fe.actionSubView == ceViewForm && fe.actionFormIdx < len(fe.actionForm) && fe.actionForm[fe.actionFormIdx].CanEditAsText() {

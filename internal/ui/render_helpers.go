@@ -100,8 +100,15 @@ func renderFormFields(w int, fields []Field, activeIdx int, insertMode bool, inp
 				for _, idx := range f.SelectedIdxs {
 					if idx >= 0 && idx < len(f.Options) {
 						hex := f.Options[idx]
-						swatch := lipgloss.NewStyle().Foreground(lipgloss.Color(hex)).Bold(true).Render("■")
-						pieces = append(pieces, swatch+StyleFieldVal.Render(" "+hex))
+						if isCustomOption(hex) {
+							hex = f.CustomText
+						}
+						if strings.HasPrefix(hex, "#") {
+							swatch := lipgloss.NewStyle().Foreground(lipgloss.Color(hex)).Bold(true).Render("■")
+							pieces = append(pieces, swatch+StyleFieldVal.Render(" "+hex))
+						} else {
+							pieces = append(pieces, StyleSectionDesc.Render("■")+StyleFieldVal.Render(" custom"))
+						}
 					}
 				}
 				val := strings.Join(pieces, StyleSectionDesc.Render(" · "))
@@ -153,6 +160,29 @@ func renderFormFields(w int, fields []Field, activeIdx int, insertMode bool, inp
 		}
 		lines = append(lines, row)
 
+		// When typing a custom hex for a ColorSwatch field, show the currently
+		// selected colors as swatches on a hint line below the text input.
+		if insertMode && isCur && f.ColorSwatch && len(f.SelectedIdxs) > 0 {
+			indent := strings.Repeat(" ", ddIndent)
+			var pieces []string
+			for _, idx := range f.SelectedIdxs {
+				if idx < 0 || idx >= len(f.Options) {
+					continue
+				}
+				hex := f.Options[idx]
+				if isCustomOption(hex) {
+					hex = f.CustomText
+				}
+				if strings.HasPrefix(hex, "#") {
+					swatch := lipgloss.NewStyle().Foreground(lipgloss.Color(hex)).Bold(true).Render("■")
+					pieces = append(pieces, swatch+" "+StyleSectionDesc.Render(hex))
+				}
+			}
+			if len(pieces) > 0 {
+				lines = append(lines, indent+StyleSectionDesc.Render("selected: ")+strings.Join(pieces, StyleSectionDesc.Render(" · ")))
+			}
+		}
+
 		// Inject scrollable dropdown options below the active select/multiselect field.
 		// Skip dropdown when in insert mode for a custom-option field (text input is active).
 		if isCur && ddOpen && (f.Kind == KindSelect || f.Kind == KindMultiSelect) && !(insertMode && f.CanEditAsText()) {
@@ -181,7 +211,36 @@ func renderFormFields(w int, fields []Field, activeIdx int, insertMode bool, inp
 				opt := f.Options[j]
 				isHL := j == ddOptIdx
 				var optRow string
-				if f.ColorSwatch && strings.HasPrefix(opt, "#") {
+				if f.ColorSwatch && isCustomOption(opt) {
+					// Custom hex entry row: show a live preview swatch of the typed hex.
+					previewHex := f.CustomText
+					var swatch string
+					if strings.HasPrefix(previewHex, "#") {
+						swatch = lipgloss.NewStyle().Foreground(lipgloss.Color(previewHex)).Bold(true).Render("■")
+					} else {
+						swatch = StyleSectionDesc.Render("■")
+					}
+					check := "  "
+					if f.IsMultiSelected(j) {
+						check = StyleNeonGreen.Render("✓") + " "
+					}
+					label := opt
+					if previewHex != "" {
+						label = opt + " " + previewHex
+					} else {
+						label = opt + " (enter hex)"
+					}
+					if isHL {
+						optRow = indent + StyleFieldValActive.Render("► ") + check + swatch + " " + StyleFieldValActive.Render(label)
+						rw := lipgloss.Width(optRow)
+						if rw < w {
+							optRow += strings.Repeat(" ", w-rw)
+						}
+						optRow = activeCurLineStyle().Render(optRow)
+					} else {
+						optRow = indent + "   " + check + swatch + " " + StyleFieldVal.Render(label)
+					}
+				} else if f.ColorSwatch && strings.HasPrefix(opt, "#") {
 					// Render a colored swatch block (foreground-only, survives cursor highlight).
 					swatch := lipgloss.NewStyle().Foreground(lipgloss.Color(opt)).Bold(true).Render("■")
 					check := "  "
@@ -428,11 +487,18 @@ func restoreMultiSelectValue(fields []Field, key, val string) []Field {
 		fields[i].SelectedIdxs = nil
 		for _, part := range strings.Split(val, ", ") {
 			part = strings.TrimSpace(part)
+			found := false
 			for j, opt := range fields[i].Options {
 				if opt == part {
 					fields[i].SelectedIdxs = append(fields[i].SelectedIdxs, j)
+					found = true
 					break
 				}
+			}
+			// ColorSwatch fields: custom hexes are not in the static palette,
+			// so inject them dynamically (preserving round-trip through manifest).
+			if !found && fields[i].ColorSwatch && strings.HasPrefix(part, "#") {
+				fields[i].AddCustomHexColor(part)
 			}
 		}
 		fields[i].Value = val

@@ -109,6 +109,15 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	// Build a default agent; per-section agents are resolved below.
 	defaultAgent := agent.NewClaudeAgent(defaultModel, defaultMaxTokens, o.cfg.Verbose)
 
+	// Resolve the minimum Go runtime version from the Go module proxy once here
+	// so every task — plan, infra, frontend — uses the same consistent version.
+	// The result flows into go.mod (via plan task prompt) and Dockerfiles (via
+	// infra task prompt), preventing mismatches between the two.
+	resolvedGoVersion := deps.ResolveGoVersion(ctx)
+	if resolvedGoVersion != "" {
+		o.log("realize: resolved Go version %s from dev tool requirements", resolvedGoVersion)
+	}
+
 	// Log configured per-section model assignments.
 	for sectionID, pa := range providers {
 		if pa.Credential != "" {
@@ -124,7 +133,7 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	for waveIdx, wave := range d.Levels() {
 		o.log("realize: wave %d (%d tasks): %v", waveIdx, len(wave), wave)
 
-		if err := o.runWave(ctx, wave, d, providers, reg, defaultAgent, verifiers, writer, st, mem); err != nil {
+		if err := o.runWave(ctx, wave, d, providers, reg, defaultAgent, verifiers, writer, st, mem, resolvedGoVersion); err != nil {
 			return fmt.Errorf("wave %d: %w", waveIdx, err)
 		}
 	}
@@ -146,6 +155,7 @@ func (o *Orchestrator) runWave(
 	writer *output.Writer,
 	st *state.Store,
 	mem *memory.SharedMemory,
+	resolvedGoVersion string,
 ) error {
 	sem := make(chan struct{}, o.cfg.Parallelism)
 	g, gctx := errgroup.WithContext(ctx)
@@ -201,7 +211,7 @@ func (o *Orchestrator) runWave(
 				verbose:     o.cfg.Verbose,
 				logFn:       o.cfg.LogFunc,
 				baseModel:   baseModel,
-				depsContext: buildDepsContext(gctx, task),
+				depsContext: buildDepsContext(gctx, task, resolvedGoVersion),
 			}
 			return runner.Run(gctx)
 		})
@@ -350,7 +360,10 @@ func loadManifest(path string) (*manifest.Manifest, error) {
 // For infra and frontend tasks, it resolves live package versions from npm and the
 // Go module proxy (falling back to the static entries in WellKnownNpmPackages /
 // WellKnownGoDevTools when the registries are unreachable).
-func buildDepsContext(ctx context.Context, task *dag.Task) string {
+// resolvedGoVersion is the minimum Go runtime version resolved once at startup via
+// deps.ResolveGoVersion; it is injected into service task prompts so the plan LLM
+// generates a go.mod whose `go X.Y` directive matches the infra Dockerfile base image.
+func buildDepsContext(ctx context.Context, task *dag.Task, resolvedGoVersion string) string {
 	switch task.Kind {
 	case dag.TaskKindInfraDocker, dag.TaskKindInfraCI, dag.TaskKindInfraTerraform:
 		hasGoServices := len(task.Payload.AllServices) > 0
@@ -373,7 +386,7 @@ func buildDepsContext(ctx context.Context, task *dag.Task) string {
 		if task.Payload.Auth != nil {
 			technologies = append(technologies, task.Payload.Auth.Strategy)
 		}
-		return deps.PromptContext(task.Payload.Service.Framework, technologies)
+		return deps.PromptContext(task.Payload.Service.Framework, technologies, resolvedGoVersion)
 	}
 }
 

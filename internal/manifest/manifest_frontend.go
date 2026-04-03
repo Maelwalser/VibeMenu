@@ -37,18 +37,29 @@ type FrontendTheme struct {
 	Description  string `json:"description,omitempty"`
 }
 
+// PageComponentDef describes a UI component within a page.
+type PageComponentDef struct {
+	Name               string `json:"name"`
+	ComponentType      string `json:"component_type"`
+	ConnectedEndpoints string `json:"connected_endpoints,omitempty"`
+	RequestDTO         string `json:"request_dto,omitempty"`
+	ResponseDTO        string `json:"response_dto,omitempty"`
+	Description        string `json:"description,omitempty"`
+}
+
 // PageDef describes a frontend page.
 type PageDef struct {
-	Name          string `json:"name"`
-	Route         string `json:"route"`
-	AuthRequired  string `json:"auth_required"`
-	Layout        string `json:"layout"`
-	Description   string `json:"description,omitempty"`
-	CoreActions   string `json:"core_actions,omitempty"`
-	Loading       string `json:"loading"`
-	ErrorHandling string `json:"error_handling"`
-	AuthRoles     string `json:"auth_roles,omitempty"`
-	LinkedPages   string `json:"linked_pages,omitempty"`
+	Name          string             `json:"name"`
+	Route         string             `json:"route"`
+	AuthRequired  string             `json:"auth_required"`
+	Layout        string             `json:"layout"`
+	Description   string             `json:"description,omitempty"`
+	CoreActions   string             `json:"core_actions,omitempty"`
+	Loading       string             `json:"loading"`
+	ErrorHandling string             `json:"error_handling"`
+	AuthRoles     string             `json:"auth_roles,omitempty"`
+	LinkedPages   string             `json:"linked_pages,omitempty"`
+	Components    []PageComponentDef `json:"components,omitempty"`
 }
 
 // NavigationConfig describes frontend navigation settings.

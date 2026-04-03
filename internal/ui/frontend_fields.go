@@ -208,6 +208,34 @@ func defaultPageFormFields(authRoleOptions, pageRouteOptions []string) []Field {
 	}
 }
 
+func defaultComponentFormFields(endpointOptions, dtoOptions []string) []Field {
+	dtoWithNone := append([]string{"None"}, dtoOptions...)
+	return []Field{
+		{Key: "name", Label: "name          ", Kind: KindText},
+		{
+			Key: "comp_type", Label: "comp_type     ", Kind: KindSelect,
+			Options: []string{"Form", "Table", "Card", "List", "Chart", "Modal", "Button", "Navigation", "Custom"},
+			Value:   "Form",
+		},
+		{
+			Key: "endpoints", Label: "endpoints     ", Kind: KindMultiSelect,
+			Options: endpointOptions,
+			Value:   placeholderFor(endpointOptions, "(no endpoints configured)"),
+		},
+		{
+			Key: "request_dto", Label: "request_dto   ", Kind: KindSelect,
+			Options: dtoWithNone,
+			Value:   "None",
+		},
+		{
+			Key: "response_dto", Label: "response_dto  ", Kind: KindSelect,
+			Options: dtoWithNone,
+			Value:   "None",
+		},
+		{Key: "description", Label: "description   ", Kind: KindText},
+	}
+}
+
 func defaultI18nFields() []Field {
 	return []Field{
 		{

@@ -116,13 +116,68 @@ func loadOptionsForLanguages(langs []string) []string {
 	return base
 }
 
+// apiOptionsForProtocols returns API testing tool options relevant to the given
+// communication protocols. Falls back to REST tools when no protocols are configured.
+func apiOptionsForProtocols(protocols []string) []string {
+	var hasREST, hasGraphQL, hasGRPC bool
+	for _, p := range protocols {
+		switch p {
+		case "REST (HTTP)", "REST":
+			hasREST = true
+		case "GraphQL":
+			hasGraphQL = true
+		case "gRPC":
+			hasGRPC = true
+		}
+	}
+	// No relevant protocols — default to REST tools.
+	if !hasREST && !hasGraphQL && !hasGRPC {
+		return []string{"Bruno", "Hurl", "Postman/Newman", "REST Client", "None"}
+	}
+	// Mixed (more than one protocol present).
+	activeCount := 0
+	for _, v := range []bool{hasREST, hasGraphQL, hasGRPC} {
+		if v {
+			activeCount++
+		}
+	}
+	if activeCount > 1 {
+		return []string{"Bruno", "Postman/Newman", "None"}
+	}
+	if hasGraphQL {
+		return []string{"Bruno", "Postman/Newman", "GraphQL Playground", "None"}
+	}
+	if hasGRPC {
+		return []string{"grpcurl", "Postman/Newman", "BloomRPC", "None"}
+	}
+	// REST only.
+	return []string{"Bruno", "Hurl", "Postman/Newman", "REST Client", "None"}
+}
+
+// contractOptionsForArchPattern returns contract-testing tool options based on
+// the selected backend architecture pattern.
+func contractOptionsForArchPattern(archPattern string) []string {
+	switch archPattern {
+	case "microservices":
+		return []string{"Pact", "Schemathesis", "Dredd", "None"}
+	case "event-driven":
+		return []string{"Pact", "AsyncAPI validator", "None"}
+	case "hybrid":
+		return []string{"Pact", "Schemathesis", "Dredd", "None"}
+	default: // monolith, modular-monolith, or unset
+		return []string{"None", "Schemathesis"}
+	}
+}
+
 // computeTestingFields builds testing Field definitions filtered to the given
-// backend languages and frontend tech. Existing values are preserved when
-// the option is still available; otherwise the first option is selected.
-func computeTestingFields(backendLangs []string, frontendLang, frontendFramework string, existing []Field) []Field {
+// backend languages, protocols, arch pattern, and frontend tech. Existing values
+// are preserved when the option is still available; otherwise the first option is selected.
+func computeTestingFields(backendLangs, backendProtocols []string, backendArchPattern, frontendLang, frontendFramework string, existing []Field) []Field {
 	unitOpts := unitOptionsForLanguages(backendLangs)
 	e2eOpts := e2eOptionsForFrontend(frontendLang, frontendFramework)
 	loadOpts := loadOptionsForLanguages(backendLangs)
+	apiOpts := apiOptionsForProtocols(backendProtocols)
+	contractOpts := contractOptionsForArchPattern(backendArchPattern)
 
 	template := []struct {
 		key, label string
@@ -131,9 +186,9 @@ func computeTestingFields(backendLangs []string, frontendLang, frontendFramework
 		{"unit", "unit          ", unitOpts},
 		{"integration", "integration   ", []string{"Testcontainers", "Docker Compose", "In-memory fakes", "None"}},
 		{"e2e", "e2e           ", e2eOpts},
-		{"api", "api           ", []string{"Bruno", "Hurl", "Postman/Newman", "REST Client", "None"}},
+		{"api", "api           ", apiOpts},
 		{"load", "load          ", loadOpts},
-		{"contract", "contract      ", []string{"Pact", "Schemathesis", "Dredd", "None"}},
+		{"contract", "contract      ", contractOpts},
 	}
 
 	// Build lookup of existing values.
@@ -179,7 +234,7 @@ func computeTestingFields(backendLangs []string, frontendLang, frontendFramework
 }
 
 func defaultTestingFields() []Field {
-	return computeTestingFields(nil, "", "", nil)
+	return computeTestingFields(nil, nil, "", "", "", nil)
 }
 
 func defaultStandardsFields() []Field {
@@ -269,9 +324,11 @@ type CrossCutEditor struct {
 	nav VimNav
 
 	// Context from other editors — used to filter testing options.
-	backendLangs      []string
-	frontendLang      string
-	frontendFramework string
+	backendLangs        []string
+	backendProtocols    []string
+	backendArchPattern  string
+	frontendLang        string
+	frontendFramework   string
 }
 
 func (cc CrossCutEditor) activeTabEnabled() bool {
@@ -304,7 +361,7 @@ func (cc *CrossCutEditor) disableActiveTab() {
 	switch cc.activeTab {
 	case ccTabTesting:
 		cc.testingEnabled = false
-		cc.testingFields = computeTestingFields(cc.backendLangs, cc.frontendLang, cc.frontendFramework, nil)
+		cc.testingFields = computeTestingFields(cc.backendLangs, cc.backendProtocols, cc.backendArchPattern, cc.frontendLang, cc.frontendFramework, nil)
 		cc.testFormIdx = 0
 	case ccTabDocs:
 		cc.docsEnabled = false
@@ -326,20 +383,24 @@ func newCrossCutEditor() CrossCutEditor {
 	}
 }
 
-// SetTestingContext updates the backend languages and frontend tech context used
-// to filter testing framework options. If the testing tab is already enabled,
-// the field options are recomputed immediately (preserving current selections).
-func (cc *CrossCutEditor) SetTestingContext(backendLangs []string, frontendLang, frontendFramework string) {
+// SetTestingContext updates the backend languages, protocols, and frontend tech
+// context used to filter testing framework options. If the testing tab is already
+// enabled, the field options are recomputed immediately (preserving current selections).
+func (cc *CrossCutEditor) SetTestingContext(backendLangs, backendProtocols []string, backendArchPattern, frontendLang, frontendFramework string) {
 	// Nothing changed — skip expensive recompute.
 	if stringSlicesEqual(cc.backendLangs, backendLangs) &&
+		stringSlicesEqual(cc.backendProtocols, backendProtocols) &&
+		cc.backendArchPattern == backendArchPattern &&
 		cc.frontendLang == frontendLang &&
 		cc.frontendFramework == frontendFramework {
 		return
 	}
 	cc.backendLangs = backendLangs
+	cc.backendProtocols = backendProtocols
+	cc.backendArchPattern = backendArchPattern
 	cc.frontendLang = frontendLang
 	cc.frontendFramework = frontendFramework
-	cc.testingFields = computeTestingFields(backendLangs, frontendLang, frontendFramework, cc.testingFields)
+	cc.testingFields = computeTestingFields(backendLangs, backendProtocols, backendArchPattern, frontendLang, frontendFramework, cc.testingFields)
 }
 
 func stringSlicesEqual(a, b []string) bool {

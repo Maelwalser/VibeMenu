@@ -431,7 +431,8 @@ func (fe FrontendEditor) View(w, h int) string {
 	switch fe.activeTab {
 	case feTabTech:
 		if fe.techEnabled {
-			lines = append(lines, renderFormFields(w, fe.techFields, fe.techFormIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)...)
+			fl := renderFormFields(w, fe.techFields, fe.techFormIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)
+			lines = append(lines, appendViewport(fl, 0, fe.techFormIdx, h-feHeaderH)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
@@ -450,7 +451,8 @@ func (fe FrontendEditor) View(w, h int) string {
 				fe.formTextArea.SetWidth(w - 4)
 				lines = append(lines, fe.formTextArea.View())
 			} else {
-				lines = append(lines, renderFormFields(w, fe.themeFields, fe.themeFormIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)...)
+				fl := renderFormFields(w, fe.themeFields, fe.themeFormIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)
+				lines = append(lines, appendViewport(fl, 0, fe.themeFormIdx, h-feHeaderH)...)
 			}
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
@@ -463,19 +465,22 @@ func (fe FrontendEditor) View(w, h int) string {
 		lines = append(lines, pageLines...)
 	case feTabNav:
 		if fe.navEnabled {
-			lines = append(lines, renderFormFields(w, fe.navFields, fe.navFormIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)...)
+			fl := renderFormFields(w, fe.navFields, fe.navFormIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)
+			lines = append(lines, appendViewport(fl, 0, fe.navFormIdx, h-feHeaderH)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case feTabI18n:
 		if fe.i18nEnabled {
-			lines = append(lines, renderFormFields(w, fe.i18nFields, fe.i18nFormIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)...)
+			fl := renderFormFields(w, fe.i18nFields, fe.i18nFormIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)
+			lines = append(lines, appendViewport(fl, 0, fe.i18nFormIdx, h-feHeaderH)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}
 	case feTabA11ySEO:
 		if fe.a11yEnabled {
-			lines = append(lines, renderFormFields(w, fe.a11yFields, fe.a11yFormIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)...)
+			fl := renderFormFields(w, fe.a11yFields, fe.a11yFormIdx, fe.internalMode == ModeInsert, fe.formInput, fe.dd.Open, fe.dd.OptIdx)
+			lines = append(lines, appendViewport(fl, 0, fe.a11yFormIdx, h-feHeaderH)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}

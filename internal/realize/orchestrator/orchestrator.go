@@ -201,7 +201,7 @@ func (o *Orchestrator) runWave(
 				verbose:     o.cfg.Verbose,
 				logFn:       o.cfg.LogFunc,
 				baseModel:   baseModel,
-				depsContext: buildDepsContext(task),
+				depsContext: buildDepsContext(gctx, task),
 			}
 			return runner.Run(gctx)
 		})
@@ -346,20 +346,35 @@ func loadManifest(path string) (*manifest.Manifest, error) {
 }
 
 // buildDepsContext computes the dependency & API reference context for a task's
-// system prompt. Returns "" for tasks with no service payload (data, infra, etc.).
-func buildDepsContext(task *dag.Task) string {
-	if task.Payload.Service == nil {
-		return ""
+// system prompt. Returns "" for tasks with no relevant context (data tasks, etc.).
+// For infra and frontend tasks, it resolves live package versions from npm and the
+// Go module proxy (falling back to the static entries in WellKnownNpmPackages /
+// WellKnownGoDevTools when the registries are unreachable).
+func buildDepsContext(ctx context.Context, task *dag.Task) string {
+	switch task.Kind {
+	case dag.TaskKindInfraDocker, dag.TaskKindInfraCI, dag.TaskKindInfraTerraform:
+		hasGoServices := len(task.Payload.AllServices) > 0
+		hasFrontend := task.Payload.Frontend != nil
+		return deps.InfraPromptContext(ctx, hasGoServices, hasFrontend)
+
+	case dag.TaskKindFrontend:
+		return deps.InfraPromptContext(ctx, false, true)
+
+	default:
+		// Backend service tasks: inject Go module versions + library API docs.
+		if task.Payload.Service == nil {
+			return ""
+		}
+		var technologies []string
+		technologies = append(technologies, task.Payload.Service.Language)
+		for _, db := range task.Payload.Databases {
+			technologies = append(technologies, string(db.Type))
+		}
+		if task.Payload.Auth != nil {
+			technologies = append(technologies, task.Payload.Auth.Strategy)
+		}
+		return deps.PromptContext(task.Payload.Service.Framework, technologies)
 	}
-	var technologies []string
-	technologies = append(technologies, task.Payload.Service.Language)
-	for _, db := range task.Payload.Databases {
-		technologies = append(technologies, string(db.Type))
-	}
-	if task.Payload.Auth != nil {
-		technologies = append(technologies, task.Payload.Auth.Strategy)
-	}
-	return deps.PromptContext(task.Payload.Service.Framework, technologies)
 }
 
 // technologiesFor returns all technology strings relevant to a task for skill lookup.

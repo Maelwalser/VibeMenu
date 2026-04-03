@@ -398,6 +398,7 @@ func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 	}
 
 	infra := m.Infra
+	svcDirs := serviceOutputDirs(m)
 
 	add(d, &Task{
 		ID:           "infra.docker",
@@ -412,6 +413,7 @@ func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 			Databases:   m.Data.Databases,
 			Infra:       &infra,
 			Frontend:    frontendOrNil(m),
+			ServiceDirs: svcDirs,
 		},
 	})
 
@@ -427,6 +429,7 @@ func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 				AllServices: m.Backend.Services,
 				Databases:   m.Data.Databases,
 				Infra:       &infra,
+				ServiceDirs: svcDirs,
 			},
 		})
 	}
@@ -443,6 +446,7 @@ func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 				AllServices: m.Backend.Services,
 				Infra:       &infra,
 				CrossCut:    crossCutOrNil(m),
+				ServiceDirs: svcDirs,
 			},
 		})
 	}
@@ -495,6 +499,26 @@ func (b *Builder) addCrossCutTasks(m *manifest.Manifest, d *DAG) {
 			},
 		})
 	}
+}
+
+// serviceOutputDirs returns a map from service slug → output directory (relative
+// to the output root) where that service's generated source files reside.
+//
+// All service task chains write their files directly to the output root — the
+// writer uses f.Path as-is, so go.mod lands at "go.mod", not "services/api/go.mod".
+// Infra tasks must use these paths as Docker build contexts instead of inventing
+// a multi-service subdirectory layout.
+func serviceOutputDirs(m *manifest.Manifest) map[string]string {
+	dirs := make(map[string]string)
+	switch m.Backend.ArchPattern {
+	case manifest.ArchMonolith, manifest.ArchModularMonolith:
+		dirs["monolith"] = "."
+	default:
+		for _, svc := range m.Backend.Services {
+			dirs[svcSlug(svc.Name)] = "."
+		}
+	}
+	return dirs
 }
 
 // ── nil-safe helpers ──────────────────────────────────────────────────────────

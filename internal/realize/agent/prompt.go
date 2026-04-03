@@ -281,9 +281,59 @@ STRICT SCOPE:
 		dag.TaskKindGateway:  "You are an expert platform engineer. Generate API gateway configuration including routing rules, rate limiting, and middleware configuration.",
 
 		dag.TaskKindContracts: "You are an expert API designer. Generate DTO types, request/response models, and an OpenAPI specification from the endpoint definitions.",
-		dag.TaskKindFrontend:  "You are an expert frontend engineer. Generate a complete frontend application with pages, components, API client integration, and routing.",
+		dag.TaskKindFrontend: `You are an expert frontend engineer. Generate a complete frontend application with pages, components, API client integration, and routing.
 
-		dag.TaskKindInfraDocker:    "You are an expert DevOps engineer. Generate Dockerfiles and docker-compose configuration for all services.",
+CRITICAL RULES:
+- Config file: use next.config.mjs (NOT next.config.ts — TypeScript config requires Next.js 15.3+; .mjs works universally)
+- Package versions: use EXACTLY the versions from the "Infrastructure & Dependency Reference" section
+- package.json: always include all packages with pinned versions from the reference section`,
+
+		dag.TaskKindInfraDocker: `You are an expert DevOps engineer. Your job is to generate ONLY infrastructure configuration files.
+
+SCOPE — generate ONLY these file types:
+  - Dockerfile (one per service)
+  - docker-compose.yml
+  - .air.toml (Go hot-reload config)
+  - Makefile
+  - nginx.conf / reverse-proxy config
+  - .dockerignore
+  - scripts/init-db.sql and similar setup scripts
+
+DO NOT generate any of these — they are already written by service agents:
+  - Go source files (.go) including main.go, internal/*, cmd/*
+  - TypeScript/JavaScript source files (.ts, .tsx, .js)
+  - package.json, tsconfig.json, next.config.*, tailwind.config.*
+  - go.mod, go.sum
+
+BUILD CONTEXT RULES — this is critical for Docker to find the source files:
+  The payload field "service_dirs" maps each service slug to the directory where its
+  generated files live, relative to the output root. Use this EXACTLY as the docker-compose
+  build context. Do NOT invent subdirectories like "services/api/" that don't exist.
+
+  Example: if service_dirs = {"monolith": "."}, then docker-compose must be:
+    services:
+      core-api:
+        build:
+          context: .          ← use the value from service_dirs
+          dockerfile: Dockerfile
+
+  The Dockerfile for the Go service must use COPY paths matching the build context:
+    COPY go.mod go.sum ./   ← correct when context is "." (go.mod is at the root)
+
+VERSION RULES — use ONLY versions from the "Infrastructure & Dependency Reference" section:
+  - Go base image: use the exact golang image version from the reference (NOT 1.22 or earlier)
+  - Air: use the exact module path and version from the reference (NEVER github.com/cosmtrek/air)
+  - Node: FROM node:20-alpine
+  - npm: use 'npm install' NOT 'npm ci' (no package-lock.json exists)
+
+REQUIRED Go Dockerfile layer order:
+  FROM golang:<version>-alpine
+  WORKDIR /app
+  RUN go install <air-module>@<version>
+  COPY go.mod go.sum ./
+  RUN go mod download
+  COPY . .
+  CMD ["air", "-c", ".air.toml"]`,
 		dag.TaskKindInfraTerraform: "You are an expert infrastructure engineer. Generate IaC configuration files (Terraform/Pulumi) for all cloud resources.",
 		dag.TaskKindInfraCI:        "You are an expert DevOps engineer. Generate CI/CD pipeline configuration including build, test, and deployment stages.",
 
@@ -345,5 +395,13 @@ Rules:
 - Apply idiomatic Go: constructor injection, small focused interfaces, error wrapping with
   fmt.Errorf("context: %w", err). Never ignore errors.
 - Use the EXACT library APIs documented in the "Dependency & API Reference" section.
-  Do NOT invent types or functions that are not listed there.`
+  Do NOT invent types or functions that are not listed there.
+
+### npm / Node.js Rules (CRITICAL)
+- Use 'npm install' NOT 'npm ci' in Dockerfiles and README instructions — package-lock.json
+  is generated at runtime, not by the pipeline. npm ci will FAIL without a pre-existing lockfile.
+- Config files: use next.config.mjs (ESM) — works universally across Next.js versions.
+  next.config.ts is only supported from Next.js 15.3+.
+- Always use EXACTLY the versions from the "Infrastructure & Dependency Reference" section.
+  Do NOT guess or use @latest for any package.`
 }

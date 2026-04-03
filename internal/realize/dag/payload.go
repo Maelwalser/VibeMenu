@@ -36,6 +36,13 @@ type TaskPayload struct {
 	// Frontend pillar
 	Frontend *manifest.FrontendPillar `json:"frontend,omitempty"`
 
+	// ServiceDirs maps each service slug to the directory containing its generated
+	// source files, relative to the output root. Used by infra tasks to set the
+	// correct Docker build context without guessing or inventing subdirectories.
+	// For a monolith: {"monolith": "."} — all files are at the output root.
+	// For microservices: each service also writes to the root, so the same applies.
+	ServiceDirs map[string]string `json:"service_dirs,omitempty"`
+
 	// Infrastructure pillar
 	Infra *manifest.InfraPillar `json:"infra,omitempty"`
 

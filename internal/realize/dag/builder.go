@@ -33,16 +33,48 @@ func add(d *DAG, t *Task) {
 	d.Tasks[t.ID] = t
 }
 
+// serviceIDs returns the final task ID in each service's generation chain
+// (the bootstrap task). Used by downstream tasks (contracts, infra, crosscut)
+// to declare that all service layers must be complete before they run.
 func serviceIDs(m *manifest.Manifest) []string {
-	ids := make([]string, 0, len(m.Backend.Services))
-	for _, svc := range m.Backend.Services {
-		ids = append(ids, serviceTaskID(svc.Name))
+	switch m.Backend.ArchPattern {
+	case manifest.ArchMonolith, manifest.ArchModularMonolith:
+		return []string{svcBootstrapID("monolith")}
+	default:
+		ids := make([]string, 0, len(m.Backend.Services))
+		for _, svc := range m.Backend.Services {
+			ids = append(ids, svcBootstrapID(svc.Name))
+		}
+		return ids
 	}
-	return ids
 }
 
-func serviceTaskID(name string) string {
-	return "service." + strings.ToLower(strings.ReplaceAll(name, " ", "-"))
+// serviceAllLayerIDs returns all task IDs for a service (plan + deps + four layers).
+// Used by crosscut tasks that need to depend on every layer.
+func serviceAllLayerIDs(name string) []string {
+	slug := svcSlug(name)
+	return []string{
+		"svc." + slug + ".plan",
+		"svc." + slug + ".deps",
+		"svc." + slug + ".repository",
+		"svc." + slug + ".service",
+		"svc." + slug + ".handler",
+		"svc." + slug + ".bootstrap",
+	}
+}
+
+func svcBootstrapID(name string) string { return "svc." + svcSlug(name) + ".bootstrap" }
+func svcPlanID(name string) string      { return "svc." + svcSlug(name) + ".plan" }
+func svcDepsID(name string) string      { return "svc." + svcSlug(name) + ".deps" }
+func svcSlug(name string) string {
+	return strings.ToLower(strings.ReplaceAll(name, " ", "-"))
+}
+
+// deriveModulePath returns a deterministic Go module path for a service.
+// Uses the service name directly (e.g. "core-api") so all agents in the
+// chain produce consistent import paths without guessing an org name.
+func deriveModulePath(svcName string) string {
+	return svcSlug(svcName)
 }
 
 // ── Wave 0: data tasks ────────────────────────────────────────────────────────
@@ -82,11 +114,21 @@ func (b *Builder) addBackendTasks(m *manifest.Manifest, d *DAG) {
 
 	switch m.Backend.ArchPattern {
 	case manifest.ArchMonolith, manifest.ArchModularMonolith:
-		b.addMonolithTask(m, d, dataDeps)
+		svc := manifest.ServiceDef{
+			Name:           "monolith",
+			Responsibility: "All application logic",
+			Language:       m.Backend.Language,
+			Framework:      m.Backend.Framework,
+		}
+		if len(m.Backend.Services) > 0 {
+			svc = m.Backend.Services[0]
+			svc.Name = "monolith"
+		}
+		b.addServiceTaskChain(m, &svc, d, dataDeps)
 	default:
-		// microservices, event-driven, hybrid: one task per service
+		// microservices, event-driven, hybrid: one chain per service
 		for i := range m.Backend.Services {
-			b.addServiceTask(m, &m.Backend.Services[i], d, dataDeps)
+			b.addServiceTaskChain(m, &m.Backend.Services[i], d, dataDeps)
 		}
 	}
 
@@ -143,52 +185,128 @@ func (b *Builder) addBackendTasks(m *manifest.Manifest, d *DAG) {
 	}
 }
 
-func (b *Builder) addMonolithTask(m *manifest.Manifest, d *DAG, deps []string) {
-	// For monolith/modular-monolith, represent as a single service task.
-	svc := manifest.ServiceDef{
-		Name:           "monolith",
-		Responsibility: "All application logic",
-		Language:       m.Backend.Language,
-		Framework:      m.Backend.Framework,
-	}
-	if len(m.Backend.Services) > 0 {
-		svc = m.Backend.Services[0]
-		svc.Name = "monolith"
-	}
+// addServiceTaskChain emits four focused tasks for one service:
+//
+//	repository → service → handler → bootstrap
+//
+// Each task is small (~2–6K output tokens), independently verifiable with
+// go build, and receives only the context it actually needs. Module path is
+// derived from the service name and injected into every task so all layers
+// share identical import paths with no guessing.
+func (b *Builder) addServiceTaskChain(m *manifest.Manifest, svc *manifest.ServiceDef, d *DAG, dataDeps []string) {
+	slug := svcSlug(svc.Name)
+	modPath := deriveModulePath(svc.Name)
+	svcCopy := *svc
+	links := commLinksFor(svc.Name, m.Backend.CommLinks)
+
+	planID := svcPlanID(slug)
+	depsID := svcDepsID(slug)
+	repoID := "svc." + slug + ".repository"
+	svcID := "svc." + slug + ".service"
+	handlerID := "svc." + slug + ".handler"
+	bootID := "svc." + slug + ".bootstrap"
+
+	// Layer 0a — plan: project skeleton (go.mod with direct deps + repository interfaces).
+	// The LLM lists only direct dependencies; it does NOT pin transitive packages.
+	// Runs before all implementation layers so every downstream agent
+	// has a stable contract to implement against.
 	add(d, &Task{
-		ID:           "service.monolith",
-		Kind:         TaskKindService,
-		Label:        "Generate monolith service",
-		Dependencies: deps,
+		ID:           planID,
+		Kind:         TaskKindServicePlan,
+		Label:        fmt.Sprintf("%s — project skeleton (interfaces + go.mod)", svc.Name),
+		Dependencies: dataDeps,
 		Payload: TaskPayload{
+			ModulePath:  modPath,
 			ArchPattern: m.Backend.ArchPattern,
 			EnvConfig:   m.Backend.Env,
-			Service:     &svc,
-			AllServices: m.Backend.Services,
+			Service:     &svcCopy,
 			Domains:     m.Data.Domains,
 			Databases:   m.Data.Databases,
-			CommLinks:   m.Backend.CommLinks,
 			Auth:        &m.Backend.Auth,
 		},
 	})
-}
 
-func (b *Builder) addServiceTask(m *manifest.Manifest, svc *manifest.ServiceDef, d *DAG, deps []string) {
-	id := serviceTaskID(svc.Name)
-	svcCopy := *svc
+	// Layer 0b — deps: dependency resolution (no LLM).
+	// Runs go mod tidy / npm install / pip-compile on the plan task's
+	// dependency manifest to lock all transitive versions using the live
+	// package registry. Committed go.mod+go.sum become the canonical module
+	// graph for every subsequent layer.
 	add(d, &Task{
-		ID:           id,
-		Kind:         TaskKindService,
-		Label:        fmt.Sprintf("Generate service: %s", svc.Name),
-		Dependencies: deps,
+		ID:           depsID,
+		Kind:         TaskKindDependencyResolution,
+		Label:        fmt.Sprintf("%s — resolve & lock dependencies", svc.Name),
+		Dependencies: []string{planID},
 		Payload: TaskPayload{
+			ModulePath:  modPath,
+			ArchPattern: m.Backend.ArchPattern,
+			Service:     &svcCopy,
+		},
+	})
+
+	// Layer 1 — repository: data-access interfaces + DB implementations.
+	// Small: ~200–400 lines of Go. Depends on resolved module graph from deps.
+	add(d, &Task{
+		ID:           repoID,
+		Kind:         TaskKindServiceRepository,
+		Label:        fmt.Sprintf("%s — repository layer", svc.Name),
+		Dependencies: []string{depsID},
+		Payload: TaskPayload{
+			ModulePath:  modPath,
+			ArchPattern: m.Backend.ArchPattern,
+			Service:     &svcCopy,
+			Domains:     m.Data.Domains,
+			Databases:   m.Data.Databases,
+		},
+	})
+
+	// Layer 2 — service/business logic: orchestrates repositories.
+	// Small: ~150–300 lines of Go per domain entity.
+	add(d, &Task{
+		ID:           svcID,
+		Kind:         TaskKindServiceLogic,
+		Label:        fmt.Sprintf("%s — service layer", svc.Name),
+		Dependencies: []string{repoID},
+		Payload: TaskPayload{
+			ModulePath:  modPath,
+			ArchPattern: m.Backend.ArchPattern,
+			Service:     &svcCopy,
+			Domains:     m.Data.Domains,
+		},
+	})
+
+	// Layer 3 — handlers: HTTP routes and request/response mapping.
+	// Small: ~200–400 lines of Go. Auth config injected so handlers can
+	// apply the correct middleware.
+	add(d, &Task{
+		ID:           handlerID,
+		Kind:         TaskKindServiceHandler,
+		Label:        fmt.Sprintf("%s — handler layer", svc.Name),
+		Dependencies: []string{svcID},
+		Payload: TaskPayload{
+			ModulePath:  modPath,
+			ArchPattern: m.Backend.ArchPattern,
+			Service:     &svcCopy,
+			Domains:     m.Data.Domains,
+			Endpoints:   m.Contracts.Endpoints,
+			CommLinks:   links,
+			Auth:        &m.Backend.Auth,
+		},
+	})
+
+	// Layer 4 — bootstrap: main.go, go.mod, config, middleware wiring.
+	// Small: ~100–200 lines. Wires all layers together.
+	add(d, &Task{
+		ID:           bootID,
+		Kind:         TaskKindServiceBootstrap,
+		Label:        fmt.Sprintf("%s — bootstrap", svc.Name),
+		Dependencies: []string{handlerID},
+		Payload: TaskPayload{
+			ModulePath:  modPath,
 			ArchPattern: m.Backend.ArchPattern,
 			EnvConfig:   m.Backend.Env,
 			Service:     &svcCopy,
 			AllServices: m.Backend.Services,
-			Domains:     m.Data.Domains,
 			Databases:   m.Data.Databases,
-			CommLinks:   commLinksFor(svc.Name, m.Backend.CommLinks),
 			Auth:        &m.Backend.Auth,
 		},
 	})
@@ -280,6 +398,7 @@ func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 	}
 
 	infra := m.Infra
+	svcDirs := serviceOutputDirs(m)
 
 	add(d, &Task{
 		ID:           "infra.docker",
@@ -294,6 +413,7 @@ func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 			Databases:   m.Data.Databases,
 			Infra:       &infra,
 			Frontend:    frontendOrNil(m),
+			ServiceDirs: svcDirs,
 		},
 	})
 
@@ -309,6 +429,7 @@ func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 				AllServices: m.Backend.Services,
 				Databases:   m.Data.Databases,
 				Infra:       &infra,
+				ServiceDirs: svcDirs,
 			},
 		})
 	}
@@ -325,6 +446,7 @@ func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 				AllServices: m.Backend.Services,
 				Infra:       &infra,
 				CrossCut:    crossCutOrNil(m),
+				ServiceDirs: svcDirs,
 			},
 		})
 	}
@@ -333,7 +455,8 @@ func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 // ── Wave 5: cross-cutting ─────────────────────────────────────────────────────
 
 func (b *Builder) addCrossCutTasks(m *manifest.Manifest, d *DAG) {
-	// Depends on everything that was emitted.
+	// Depends on every task emitted so far — cross-cutting concerns test and
+	// document the entire generated codebase.
 	allDeps := make([]string, 0, len(d.Tasks))
 	for id := range d.Tasks {
 		allDeps = append(allDeps, id)
@@ -376,6 +499,26 @@ func (b *Builder) addCrossCutTasks(m *manifest.Manifest, d *DAG) {
 			},
 		})
 	}
+}
+
+// serviceOutputDirs returns a map from service slug → output directory (relative
+// to the output root) where that service's generated source files reside.
+//
+// All service task chains write their files directly to the output root — the
+// writer uses f.Path as-is, so go.mod lands at "go.mod", not "services/api/go.mod".
+// Infra tasks must use these paths as Docker build contexts instead of inventing
+// a multi-service subdirectory layout.
+func serviceOutputDirs(m *manifest.Manifest) map[string]string {
+	dirs := make(map[string]string)
+	switch m.Backend.ArchPattern {
+	case manifest.ArchMonolith, manifest.ArchModularMonolith:
+		dirs["monolith"] = "."
+	default:
+		for _, svc := range m.Backend.Services {
+			dirs[svcSlug(svc.Name)] = "."
+		}
+	}
+	return dirs
 }
 
 // ── nil-safe helpers ──────────────────────────────────────────────────────────

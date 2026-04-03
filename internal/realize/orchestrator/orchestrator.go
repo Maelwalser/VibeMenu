@@ -5,23 +5,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/vibe-menu/internal/manifest"
-	"github.com/vibe-menu/internal/realize/agent"
-	"github.com/vibe-menu/internal/realize/dag"
-	"github.com/vibe-menu/internal/realize/memory"
-	"github.com/vibe-menu/internal/realize/output"
-	"github.com/vibe-menu/internal/realize/skills"
-	"github.com/vibe-menu/internal/realize/state"
-	"github.com/vibe-menu/internal/realize/verify"
+	"github.com/vibe-mvp/internal/manifest"
+	"github.com/vibe-mvp/internal/realize/agent"
+	"github.com/vibe-mvp/internal/realize/dag"
+	"github.com/vibe-mvp/internal/realize/deps"
+	"github.com/vibe-mvp/internal/realize/memory"
+	"github.com/vibe-mvp/internal/realize/output"
+	"github.com/vibe-mvp/internal/realize/skills"
+	"github.com/vibe-mvp/internal/realize/state"
+	"github.com/vibe-mvp/internal/realize/verify"
 )
 
 const (
-	defaultModel     = "claude-opus-4-6"
-	defaultMaxTokens = int64(32000)
+	defaultModel     = "claude-sonnet-4-6"
+	defaultMaxTokens = int64(64000)
 )
 
 // Config holds all runtime configuration for the orchestrator.
@@ -166,20 +168,40 @@ func (o *Orchestrator) runWave(
 
 			o.log("[%s] starting: %s", task.ID, task.Label)
 
-			// Resolve per-section agent if a provider assignment exists.
-			a := resolveAgent(task.ID, providers, defaultAgent, o.cfg.Verbose)
+			// Dependency resolution tasks run a package manager directly — no LLM.
+			// All other tasks resolve a provider (Claude / OpenAI / etc.) and apply
+			// model tiering for the default Claude path.
+			var (
+				a         agent.Agent
+				baseModel string
+			)
+			if task.Kind == dag.TaskKindDependencyResolution {
+				var svcTmpDir string
+				if slug, ok := serviceSlug(task.ID); ok {
+					svcTmpDir = filepath.Join(writer.BaseDir(), ".tmp", "svc."+slug)
+				}
+				a = deps.New(svcTmpDir, o.cfg.Verbose)
+			} else {
+				a = resolveAgent(task.ID, providers, defaultAgent, o.cfg.Verbose)
+				if a == defaultAgent {
+					baseModel = tierForKind(task.Kind)
+					a = agent.NewClaudeAgent(baseModel, defaultMaxTokens, o.cfg.Verbose)
+				}
+			}
 
 			runner := &TaskRunner{
-				task:       task,
-				agent:      a,
-				verifier:   verifiers.ForTask(task),
-				writer:     writer,
-				state:      st,
-				memory:     mem,
-				skillDocs:  skillDocs,
-				maxRetries: o.cfg.MaxRetries,
-				verbose:    o.cfg.Verbose,
-				logFn:      o.cfg.LogFunc,
+				task:        task,
+				agent:       a,
+				verifier:    verifiers.ForTask(task),
+				writer:      writer,
+				state:       st,
+				memory:      mem,
+				skillDocs:   skillDocs,
+				maxRetries:  o.cfg.MaxRetries,
+				verbose:     o.cfg.Verbose,
+				logFn:       o.cfg.LogFunc,
+				baseModel:   baseModel,
+				depsContext: buildDepsContext(gctx, task),
 			}
 			return runner.Run(gctx)
 		})
@@ -226,13 +248,16 @@ func providerFor(taskID string, providers manifest.ProviderAssignments) (manifes
 	return pa, ok
 }
 
-// describeProvider returns a human-readable model label for dry-run output,
-// e.g. "Claude Opus 4.6" or "Gemini Flash 2.0". Falls back to "default" when
-// the section has no configured provider.
-func describeProvider(taskID string, providers manifest.ProviderAssignments) string {
+// describeProvider returns a human-readable model label for dry-run output.
+// For manifest-configured providers it shows the provider name/tier; for
+// default-agent tasks it shows the tier-selected model.
+func describeProvider(taskID string, providers manifest.ProviderAssignments, kind dag.TaskKind) string {
+	if kind == dag.TaskKindDependencyResolution {
+		return "(package manager — no LLM)"
+	}
 	pa, ok := providerFor(taskID, providers)
 	if !ok || pa.Credential == "" {
-		return "default (" + defaultModel + ")"
+		return tierForKind(kind)
 	}
 	s := pa.Provider
 	if pa.Model != "" {
@@ -253,7 +278,7 @@ func (o *Orchestrator) printPlan(d *dag.DAG, providers manifest.ProviderAssignme
 		fmt.Printf("Wave %d:\n", i)
 		for _, id := range wave {
 			task := d.Tasks[id]
-			model := describeProvider(id, providers)
+			model := describeProvider(id, providers, task.Kind)
 			fmt.Printf("  [%s] %s  →  %s\n", task.Kind, task.Label, model)
 			if len(task.Dependencies) > 0 {
 				fmt.Printf("    deps: %v\n", task.Dependencies)
@@ -320,11 +345,43 @@ func loadManifest(path string) (*manifest.Manifest, error) {
 	return &m, nil
 }
 
+// buildDepsContext computes the dependency & API reference context for a task's
+// system prompt. Returns "" for tasks with no relevant context (data tasks, etc.).
+// For infra and frontend tasks, it resolves live package versions from npm and the
+// Go module proxy (falling back to the static entries in WellKnownNpmPackages /
+// WellKnownGoDevTools when the registries are unreachable).
+func buildDepsContext(ctx context.Context, task *dag.Task) string {
+	switch task.Kind {
+	case dag.TaskKindInfraDocker, dag.TaskKindInfraCI, dag.TaskKindInfraTerraform:
+		hasGoServices := len(task.Payload.AllServices) > 0
+		hasFrontend := task.Payload.Frontend != nil
+		return deps.InfraPromptContext(ctx, hasGoServices, hasFrontend)
+
+	case dag.TaskKindFrontend:
+		return deps.InfraPromptContext(ctx, false, true)
+
+	default:
+		// Backend service tasks: inject Go module versions + library API docs.
+		if task.Payload.Service == nil {
+			return ""
+		}
+		var technologies []string
+		technologies = append(technologies, task.Payload.Service.Language)
+		for _, db := range task.Payload.Databases {
+			technologies = append(technologies, string(db.Type))
+		}
+		if task.Payload.Auth != nil {
+			technologies = append(technologies, task.Payload.Auth.Strategy)
+		}
+		return deps.PromptContext(task.Payload.Service.Framework, technologies)
+	}
+}
+
 // technologiesFor returns all technology strings relevant to a task for skill lookup.
 func technologiesFor(task *dag.Task) []string {
 	techs := make([]string, 0, 8)
 
-	// Service language + framework.
+	// Service layer tasks and legacy service tasks: use Service or AllServices.
 	if task.Payload.Service != nil {
 		techs = append(techs, task.Payload.Service.Language, task.Payload.Service.Framework)
 	} else if len(task.Payload.AllServices) > 0 {

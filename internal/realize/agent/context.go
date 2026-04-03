@@ -15,4 +15,12 @@ type Context struct {
 	// task depends on. Agents use this as shared memory to stay consistent with
 	// the types, schemas, and interfaces already produced by the wider team.
 	DependencyOutputs []*memory.TaskOutput
+	// AttemptNumber is 0 for the first attempt and increments on each retry.
+	// Used by prompt builders to prune context on retries (dependency outputs
+	// are omitted after attempt 0 to avoid re-sending unchanged upstream context).
+	AttemptNumber int
+	// DepsContext is pre-computed dependency and library API reference text
+	// for the task's technology stack. Injected into the system prompt to
+	// prevent the agent from inventing module versions or non-existent types.
+	DepsContext string
 }

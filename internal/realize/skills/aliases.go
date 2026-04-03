@@ -80,15 +80,32 @@ var aliasMap = map[string]string{
 	"Auth0":   "auth0",
 	"Clerk":   "clerk",
 	"Cognito": "aws-cognito",
+	// Go database drivers — map to targeted skill for pgx interface + version pinning
+	"pgx":     "go-pgx-repository",
+	"pgxv5":   "go-pgx-repository",
+	"pgxmock": "go-pgx-repository",
 }
 
 // universalSkillsForKind lists skill keys always injected for a task kind,
 // regardless of which specific technologies appear in the manifest payload.
 // Add new task kinds or universal skills here without touching loader.go.
 var universalSkillsForKind = map[dag.TaskKind][]string{
-	// Backend service: quality patterns + security
-	dag.TaskKindService: {
-		"backend-patterns", "security-review", "coding-standards",
+	// Plan task: architect phase needs pgx interface guidance.
+	dag.TaskKindServicePlan: {
+		"backend-patterns", "go-pgx-repository",
+	},
+	// Service layers: each has a focused skill set matching its responsibility.
+	dag.TaskKindServiceRepository: {
+		"backend-patterns", "coding-standards", "go-pgx-repository",
+	},
+	dag.TaskKindServiceLogic: {
+		"backend-patterns", "coding-standards",
+	},
+	dag.TaskKindServiceHandler: {
+		"backend-patterns", "security-review", "api-design", "coding-standards",
+	},
+	dag.TaskKindServiceBootstrap: {
+		"backend-patterns", "coding-standards",
 	},
 	// Auth: always security-first
 	dag.TaskKindAuth: {

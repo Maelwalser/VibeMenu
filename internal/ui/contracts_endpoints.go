@@ -197,6 +197,7 @@ func (ce ContractsEditor) updateVersioning(key tea.KeyMsg) (ContractsEditor, tea
 		if key.String() == "a" {
 			ce.versioningEnabled = true
 			ce.verFormIdx = 0
+			ce.rebuildVersioningFields()
 		}
 		return ce, nil
 	}

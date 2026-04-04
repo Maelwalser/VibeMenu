@@ -139,10 +139,17 @@ func (ce ContractsEditor) ToManifestContractsPillar() manifest.ContractsPillar {
 		ExternalAPIs: ce.externalAPIs,
 	}
 	if ce.versioningEnabled {
+		strategies := make(map[string]string)
+		for _, proto := range []string{"REST", "GraphQL", "gRPC"} {
+			key := versioningStrategyFieldKey(proto)
+			if v := fieldGet(ce.versioningFields, key); v != "" {
+				strategies[proto] = v
+			}
+		}
 		p.Versioning = manifest.APIVersioning{
-			Strategy:          fieldGet(ce.versioningFields, "strategy"),
-			CurrentVersion:    fieldGet(ce.versioningFields, "current_version"),
-			DeprecationPolicy: fieldGet(ce.versioningFields, "deprecation"),
+			PerProtocolStrategies: strategies,
+			CurrentVersion:        fieldGet(ce.versioningFields, "current_version"),
+			DeprecationPolicy:     fieldGet(ce.versioningFields, "deprecation"),
 		}
 	}
 	return p
@@ -157,9 +164,13 @@ func (ce ContractsEditor) FromContractsPillar(cp manifest.ContractsPillar) Contr
 	ce.externalAPIs = cp.ExternalAPIs
 
 	// Versioning fields.
-	if cp.Versioning.Strategy != "" {
+	if len(cp.Versioning.PerProtocolStrategies) > 0 || cp.Versioning.CurrentVersion != "" {
 		ce.versioningEnabled = true
-		ce.versioningFields = setFieldValue(ce.versioningFields, "strategy", cp.Versioning.Strategy)
+		// Rebuild fields based on stored protocols.
+		ce.rebuildVersioningFields()
+		for proto, strategy := range cp.Versioning.PerProtocolStrategies {
+			ce.versioningFields = setFieldValue(ce.versioningFields, versioningStrategyFieldKey(proto), strategy)
+		}
 		ce.versioningFields = setFieldValue(ce.versioningFields, "current_version", cp.Versioning.CurrentVersion)
 		ce.versioningFields = setFieldValue(ce.versioningFields, "deprecation", cp.Versioning.DeprecationPolicy)
 	}
@@ -390,6 +401,9 @@ func (ce ContractsEditor) Update(msg tea.Msg) (ContractsEditor, tea.Cmd) {
 	switch key.String() {
 	case "h", "left", "l", "right":
 		ce.activeTab = contractsTabIdx(NavigateTab(key.String(), int(ce.activeTab), len(contractsTabLabels)))
+		if ce.activeTab == contractsTabVersioning && ce.versioningEnabled {
+			ce.rebuildVersioningFields()
+		}
 		return ce, nil
 	}
 

@@ -303,15 +303,38 @@ func defaultEndpointFormFields(serviceOptions, dtoOptions, roleOptions []string)
 	return fields
 }
 
-func defaultVersioningFields() []Field {
+// versioningByProtocol maps each versionable endpoint protocol to its valid
+// versioning strategies.
+var versioningByProtocol = map[string][]string{
+	"REST":    {"URL path (/v1/)", "Header (Accept-Version)", "Query param", "None"},
+	"GraphQL": {"Schema evolution", "None"},
+	"gRPC":    {"Package versioning", "None"},
+}
+
+// versioningStrategyFieldKey returns the field key used to store the versioning
+// strategy for a given protocol.
+func versioningStrategyFieldKey(proto string) string {
+	return "strategy_" + proto
+}
+
+// versioningStrategyLabel returns the label for a per-protocol strategy field.
+func versioningStrategyLabel(proto string) string {
+	switch proto {
+	case "REST":
+		return "REST strategy  "
+	case "GraphQL":
+		return "GraphQL strat  "
+	case "gRPC":
+		return "gRPC strategy  "
+	default:
+		return proto + " strategy "
+	}
+}
+
+// defaultVersioningTailFields returns the non-strategy versioning fields
+// (current version + deprecation policy) with their defaults.
+func defaultVersioningTailFields() []Field {
 	return []Field{
-		{
-			Key: "strategy", Label: "strategy      ", Kind: KindSelect,
-			Options: []string{
-				"URL path (/v1/)", "Header (Accept-Version)", "Query param", "None",
-			},
-			Value: "URL path (/v1/)",
-		},
 		{Key: "current_version", Label: "current_ver   ", Kind: KindText, Value: "v1"},
 		{
 			Key: "deprecation", Label: "deprecation   ", Kind: KindSelect,
@@ -320,6 +343,88 @@ func defaultVersioningFields() []Field {
 			},
 			Value: "None",
 		},
+	}
+}
+
+// defaultVersioningFields returns an initial versioning field list assuming REST
+// as the only protocol. rebuildVersioningFields() replaces this with the
+// correct per-protocol set once endpoints are known.
+func defaultVersioningFields() []Field {
+	restOpts := versioningByProtocol["REST"]
+	stratField := Field{
+		Key: versioningStrategyFieldKey("REST"), Label: versioningStrategyLabel("REST"),
+		Kind: KindSelect, Options: restOpts, Value: restOpts[0],
+	}
+	return append([]Field{stratField}, defaultVersioningTailFields()...)
+}
+
+// activeEndpointProtocols returns the distinct versionable protocols (REST,
+// GraphQL, gRPC) that have at least one endpoint defined, in a stable order.
+func (ce ContractsEditor) activeEndpointProtocols() []string {
+	seen := make(map[string]bool)
+	order := []string{"REST", "GraphQL", "gRPC"}
+	for _, ep := range ce.endpoints {
+		switch ep.Protocol {
+		case "REST", "GraphQL", "gRPC":
+			seen[ep.Protocol] = true
+		}
+	}
+	var result []string
+	for _, p := range order {
+		if seen[p] {
+			result = append(result, p)
+		}
+	}
+	if len(result) == 0 {
+		return []string{"REST"} // sensible default when no endpoints exist
+	}
+	return result
+}
+
+// rebuildVersioningFields rebuilds the versioning field slice to show one
+// strategy selector per active endpoint protocol, followed by the shared fields
+// (current_version, deprecation). Existing values are preserved by key.
+func (ce *ContractsEditor) rebuildVersioningFields() {
+	// Snapshot current values so we can restore them after rebuild.
+	saved := make(map[string]string, len(ce.versioningFields))
+	for _, f := range ce.versioningFields {
+		saved[f.Key] = f.DisplayValue()
+	}
+
+	protos := ce.activeEndpointProtocols()
+	var fields []Field
+	for _, proto := range protos {
+		opts := versioningByProtocol[proto]
+		key := versioningStrategyFieldKey(proto)
+		cur, hasSaved := saved[key]
+		f := Field{
+			Key: key, Label: versioningStrategyLabel(proto),
+			Kind: KindSelect, Options: opts, Value: opts[0],
+		}
+		if hasSaved {
+			for j, opt := range opts {
+				if opt == cur {
+					f.SelIdx = j
+					f.Value = opt
+					break
+				}
+			}
+		}
+		fields = append(fields, f)
+	}
+
+	tail := defaultVersioningTailFields()
+	// Preserve current values for tail fields.
+	for i := range tail {
+		if v, ok := saved[tail[i].Key]; ok && v != "" {
+			tail[i].Value = v
+		}
+	}
+	ce.versioningFields = append(fields, tail...)
+
+	// Clamp cursor.
+	if ce.verFormIdx >= len(ce.versioningFields) {
+		ce.verFormIdx = len(ce.versioningFields) - 1
 	}
 }
 

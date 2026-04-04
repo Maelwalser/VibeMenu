@@ -64,6 +64,7 @@ func (dt DataTabEditor) updateCachingForm(key tea.KeyMsg) (DataTabEditor, tea.Cm
 	// Refresh dynamic options
 	dt = dt.withRefreshedCachingEntities()
 	dt = dt.withRefreshedCachingDBs()
+	dt = dt.withRefreshedCachingStrategies()
 	switch key.String() {
 	case "j", "down":
 		dt.cachingFormIdx = nextCachingFormIdx(dt.cachingForm, dt.cachingFormIdx)
@@ -292,6 +293,7 @@ func (dt DataTabEditor) viewCaching(w int) []string {
 	case cachingViewForm:
 		dt = dt.withRefreshedCachingEntities()
 		dt = dt.withRefreshedCachingDBs()
+		dt = dt.withRefreshedCachingStrategies()
 		name := fieldGet(dt.cachingForm, "name")
 		if name == "" {
 			name = "(new strategy)"

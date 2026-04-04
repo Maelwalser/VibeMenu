@@ -25,7 +25,7 @@ func defaultCachingFields() []Field {
 		},
 		{
 			Key: "strategy", Label: "strategy      ", Kind: KindMultiSelect,
-			Options: []string{"Cache-aside", "Read-through", "Write-through", "Write-behind"},
+			Options: []string{"Cache-aside", "Read-through", "Write-through", "Write-behind", "CDN purge"},
 		},
 		{
 			Key: "invalidation", Label: "invalidation  ", Kind: KindSelect,
@@ -409,6 +409,60 @@ func (dt DataTabEditor) withRefreshedCachingDBs() DataTabEditor {
 			}
 			break
 		}
+	}
+	dt.cachingForm = newFields
+	return dt
+}
+
+// strategyOptionsForLayer returns the valid caching strategy options for a given layer.
+// CDN caching only supports read-oriented and CDN-specific strategies;
+// application-level and dedicated cache do not expose CDN purge.
+func strategyOptionsForLayer(layer string) []string {
+	switch layer {
+	case "CDN":
+		return []string{"Cache-aside", "Read-through", "CDN purge"}
+	case "Application-level", "Dedicated cache":
+		return []string{"Cache-aside", "Read-through", "Write-through", "Write-behind"}
+	default:
+		return []string{"Cache-aside", "Read-through", "Write-through", "Write-behind", "CDN purge"}
+	}
+}
+
+// withRefreshedCachingStrategies returns a copy of the DataTabEditor with the
+// strategy multiselect options filtered to those valid for the currently selected layer.
+// Existing selections that are no longer valid are dropped.
+func (dt DataTabEditor) withRefreshedCachingStrategies() DataTabEditor {
+	layer := fieldGet(dt.cachingForm, "layer")
+	validOpts := strategyOptionsForLayer(layer)
+
+	newFields := make([]Field, len(dt.cachingForm))
+	copy(newFields, dt.cachingForm)
+	for i := range newFields {
+		if newFields[i].Key != "strategy" {
+			continue
+		}
+		oldOpts := newFields[i].Options
+		newFields[i].Options = validOpts
+		// Re-map selected indices, dropping any that are no longer valid
+		newSelected := make([]int, 0, len(newFields[i].SelectedIdxs))
+		for _, oldIdx := range newFields[i].SelectedIdxs {
+			if oldIdx >= len(oldOpts) {
+				continue
+			}
+			oldVal := oldOpts[oldIdx]
+			for j, opt := range validOpts {
+				if opt == oldVal {
+					newSelected = append(newSelected, j)
+					break
+				}
+			}
+		}
+		newFields[i].SelectedIdxs = newSelected
+		// Clamp DDCursor
+		if newFields[i].DDCursor >= len(validOpts) {
+			newFields[i].DDCursor = 0
+		}
+		break
 	}
 	dt.cachingForm = newFields
 	return dt

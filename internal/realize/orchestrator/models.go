@@ -105,6 +105,12 @@ func resolveModelIDForTier(provider string, tier ModelTier, version string) stri
 // Add new providers to the switch without touching any other file.
 func buildAgentForTier(pa manifest.ProviderAssignment, tier ModelTier, maxTokens int64, verbose bool) agent.Agent {
 	model := resolveModelIDForTier(pa.Provider, tier, pa.Version)
+	return buildAgentWithModel(pa, model, maxTokens, verbose)
+}
+
+// buildAgentWithModel constructs an agent using an explicit model ID, bypassing
+// the tier → model lookup. Used when the manifest specifies per-tier model overrides.
+func buildAgentWithModel(pa manifest.ProviderAssignment, model string, maxTokens int64, verbose bool) agent.Agent {
 	switch pa.Provider {
 	case "Claude":
 		if pa.Credential != "" {

@@ -106,22 +106,26 @@ func NewModel(onSave SaveFunc) Model {
 	ta.BlurredStyle.Base = lipgloss.NewStyle().
 		Background(lipgloss.Color(clrBgHL))
 
-	return Model{
+	menu := newProviderMenu()
+	m := Model{
 		sections:          initSections(),
 		textInput:         ti,
 		textArea:          ta,
 		descriptionEditor: newDescriptionEditor(),
 		backendEditor:     newBackendEditor(),
-		dataTabEditor:   newDataTabEditor(),
-		contractsEditor: newContractsEditor(),
-		frontendEditor:  newFrontendEditor(),
-		infraEditor:     newInfraEditor(),
-		crossCutEditor:  newCrossCutEditor(),
-		realizeEditor:   newRealizeEditor(),
-		realize:         realizeState{screen: newRealizationScreen()},
-		modal:           modalState{menu: newProviderMenu()},
-		onSave:          onSave,
+		dataTabEditor:     newDataTabEditor(),
+		contractsEditor:   newContractsEditor(),
+		frontendEditor:    newFrontendEditor(),
+		infraEditor:       newInfraEditor(),
+		crossCutEditor:    newCrossCutEditor(),
+		realizeEditor:     newRealizeEditor(),
+		realize:           realizeState{screen: newRealizationScreen()},
+		modal:             modalState{menu: menu},
+		onSave:            onSave,
 	}
+	// Sync realize editor with credentials already loaded from disk.
+	m.realizeEditor = m.realizeEditor.UpdateProviderOptions(menu.GetConfiguredProviders())
+	return m
 }
 
 // SetFilePath sets the active save path (used when loading an existing manifest).
@@ -237,9 +241,9 @@ func (m Model) updateNormal(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case "esc":
-			// Esc closes the version dropdown first; a second Esc closes the modal.
-			// But if in credential step, let the menu handle it (steps back to auth).
-			if !m.modal.menu.dropdownOpen && m.modal.menu.focus == pmFocusProviders {
+			// Esc closes the modal when focus is on the provider list.
+			// Otherwise let the menu handle it (steps back through auth/credential).
+			if m.modal.menu.focus == pmFocusProviders {
 				m.modal.open = false
 				return m, nil
 			}

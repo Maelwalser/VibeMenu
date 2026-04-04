@@ -13,28 +13,44 @@ import (
 // RealizeMsg is emitted when the user presses R to start realization.
 type RealizeMsg struct{}
 
-
-// ── field definitions ─────────────────────────────────────────────────────────
-
-// providerTierOrder lists the tiers for each provider in display order.
-// Used to build per-section model option lists from the configured providers.
-var providerTierOrder = map[string][]string{
-	"Claude":  {"Haiku", "Sonnet", "Opus"},
-	"ChatGPT": {"Mini", "4o", "o1"},
-	"Gemini":  {"Flash", "Pro", "Ultra"},
-	"Mistral": {"Nemo", "Small", "Large"},
-	"Llama":   {"8B", "70B", "405B"},
-	"Custom":  {"Custom"},
-}
+// ── Provider → tier model data ────────────────────────────────────────────────
 
 // providerOrder is the canonical display order for providers.
 var providerOrder = []string{"Claude", "ChatGPT", "Gemini", "Mistral", "Llama", "Custom"}
 
-// sectionModelKeys are the field keys for the per-section model overrides.
-var sectionModelKeys = []string{
-	"backend_model", "data_model", "contracts_model",
-	"frontend_model", "infra_model", "crosscut_model",
+// providerTierModels maps provider label → [fast, medium, slow] model ID lists.
+// Index 0 = TierFast, 1 = TierMedium, 2 = TierSlow.
+var providerTierModels = map[string][3][]string{
+	"Claude": {
+		{"claude-haiku-4-5-20251001"},
+		{"claude-sonnet-4-6"},
+		{"claude-opus-4-6"},
+	},
+	"ChatGPT": {
+		{"gpt-4o-mini", "o3-mini"},
+		{"gpt-4o", "gpt-4o-2024-11-20"},
+		{"o1", "o1-preview"},
+	},
+	"Gemini": {
+		{"gemini-2.0-flash", "gemini-1.5-flash"},
+		{"gemini-2.0-pro-exp", "gemini-1.5-pro"},
+		{"gemini-ultra"},
+	},
+	"Mistral": {
+		{"open-mistral-nemo"},
+		{"mistral-small-2409", "mistral-small-2402"},
+		{"mistral-large-2411", "mistral-large-2407"},
+	},
+	"Llama": {
+		{"llama-3.2-8b-preview", "llama-3.1-8b-instant"},
+		{"llama-3.3-70b-versatile", "llama-3.1-70b-versatile"},
+		{"llama-3.1-405b-reasoning"},
+	},
 }
+
+// ── Field helpers ─────────────────────────────────────────────────────────────
+
+const unset = "—"
 
 func defaultRealizeFields() []Field {
 	return []Field{
@@ -45,15 +61,6 @@ func defaultRealizeFields() []Field {
 		{
 			Key: "output_dir", Label: "output_dir    ", Kind: KindText,
 			Value: ".",
-		},
-		{
-			Key: "model", Label: "model         ", Kind: KindSelect,
-			Options: []string{
-				"claude-haiku-4-5-20251001",
-				"claude-sonnet-4-6",
-				"claude-opus-4-6",
-			},
-			Value: "claude-sonnet-4-6", SelIdx: 1,
 		},
 		{
 			Key: "concurrency", Label: "concurrency   ", Kind: KindSelect,
@@ -70,30 +77,24 @@ func defaultRealizeFields() []Field {
 			Options: OptionsOffOn,
 			Value:   "false",
 		},
-		// Per-section model overrides (options populated dynamically via UpdateProviderOptions)
+		// Provider selector — options are rebuilt from configured providers.
 		{
-			Key: "backend_model", Label: "backend_model ", Kind: KindSelect,
-			Options: []string{"default"}, Value: "default",
+			Key: "provider", Label: "provider      ", Kind: KindSelect,
+			Options: []string{unset},
+			Value:   unset,
+		},
+		// Tier model selectors — options are rebuilt when provider changes.
+		{
+			Key: "tier_fast", Label: "tier_fast     ", Kind: KindSelect,
+			Options: []string{unset}, Value: unset,
 		},
 		{
-			Key: "data_model", Label: "data_model    ", Kind: KindSelect,
-			Options: []string{"default"}, Value: "default",
+			Key: "tier_medium", Label: "tier_medium   ", Kind: KindSelect,
+			Options: []string{unset}, Value: unset,
 		},
 		{
-			Key: "contracts_model", Label: "contracts_mdl ", Kind: KindSelect,
-			Options: []string{"default"}, Value: "default",
-		},
-		{
-			Key: "frontend_model", Label: "frontend_model", Kind: KindSelect,
-			Options: []string{"default"}, Value: "default",
-		},
-		{
-			Key: "infra_model", Label: "infra_model   ", Kind: KindSelect,
-			Options: []string{"default"}, Value: "default",
-		},
-		{
-			Key: "crosscut_model", Label: "crosscut_model", Kind: KindSelect,
-			Options: []string{"default"}, Value: "default",
+			Key: "tier_slow", Label: "tier_slow     ", Kind: KindSelect,
+			Options: []string{unset}, Value: unset,
 		},
 	}
 }
@@ -118,58 +119,83 @@ func newRealizeEditor() RealizeEditor {
 	}
 }
 
-// ── Provider options sync ─────────────────────────────────────────────────────
+// ── Provider / tier options sync ──────────────────────────────────────────────
 
-// UpdateProviderOptions rebuilds the per-section model field options from the
-// currently configured providers. Options are formatted as "Provider · Tier"
-// (e.g. "Claude · Sonnet", "Gemini · Flash"). Any section field whose current
-// value is no longer in the new option list is reset to "default".
+// UpdateProviderOptions rebuilds the provider selector options from the
+// currently configured providers and syncs the tier fields accordingly.
 func (r RealizeEditor) UpdateProviderOptions(configured map[string]ProviderSelection) RealizeEditor {
-	options := []string{"default"}
-	for _, provLabel := range providerOrder {
-		sel, ok := configured[provLabel]
+	// Build the list of configured providers — no unset sentinel in the dropdown.
+	options := []string{}
+	for _, label := range providerOrder {
+		sel, ok := configured[label]
 		if !ok || !sel.IsSet() {
 			continue
 		}
-		for _, tier := range providerTierOrder[provLabel] {
-			options = append(options, provLabel+" · "+tier)
-		}
+		options = append(options, label)
 	}
 
 	for i := range r.fields {
-		f := &r.fields[i]
-		if !isSectionModelKey(f.Key) {
+		if r.fields[i].Key != "provider" {
 			continue
 		}
-		f.Options = options
-		// Keep value if still valid, else reset to default.
-		valid := false
+		r.fields[i].Options = options
+		// Keep current value if still in the list; otherwise reset to unset.
+		found := false
 		for j, o := range options {
-			if o == f.Value {
-				f.SelIdx = j
-				valid = true
+			if o == r.fields[i].Value {
+				r.fields[i].SelIdx = j
+				found = true
 				break
 			}
 		}
-		if !valid {
-			f.Value = "default"
-			f.SelIdx = 0
+		if !found {
+			r.fields[i].Value = unset
+			r.fields[i].SelIdx = 0
+		}
+		break
+	}
+	return r.syncTierFields()
+}
+
+// syncTierFields updates the tier_fast / tier_medium / tier_slow option lists
+// to match the currently selected provider. When no provider is selected (unset),
+// all tier fields are reset to the unset sentinel.
+func (r RealizeEditor) syncTierFields() RealizeEditor {
+	provider := fieldGet(r.fields, "provider")
+	tiers, hasProvider := providerTierModels[provider]
+
+	tierKeys := []string{"tier_fast", "tier_medium", "tier_slow"}
+	for ti, key := range tierKeys {
+		var options []string
+		if hasProvider {
+			options = tiers[ti]
+		}
+		// No unset sentinel in options — — is only the placeholder Value.
+
+		for i := range r.fields {
+			if r.fields[i].Key != key {
+				continue
+			}
+			r.fields[i].Options = options
+			found := false
+			for j, o := range options {
+				if o == r.fields[i].Value {
+					r.fields[i].SelIdx = j
+					found = true
+					break
+				}
+			}
+			if !found {
+				r.fields[i].Value = unset
+				r.fields[i].SelIdx = 0
+			}
+			break
 		}
 	}
 	return r
 }
 
-// isSectionModelKey reports whether key is one of the per-section model fields.
-func isSectionModelKey(key string) bool {
-	for _, k := range sectionModelKeys {
-		if k == key {
-			return true
-		}
-	}
-	return false
-}
-
-// ── ToManifest ────────────────────────────────────────────────────────────────
+// ── ToManifest / FromRealizeOptions ──────────────────────────────────────────
 
 func (r RealizeEditor) ToManifestRealizeOptions() manifest.RealizeOptions {
 	concurrency := 4
@@ -184,37 +210,31 @@ func (r RealizeEditor) ToManifestRealizeOptions() manifest.RealizeOptions {
 		concurrency = 8
 	}
 
-	// Collect non-default section model overrides.
-	sectionKeys := []string{"backend_model", "data_model", "contracts_model", "frontend_model", "infra_model", "crosscut_model"}
-	sectionIDs := []string{"backend", "data", "contracts", "frontend", "infra", "crosscut"}
-	var sectionModels map[string]string
-	for i, key := range sectionKeys {
-		val := fieldGet(r.fields, key)
-		if val != "" && val != "default" {
-			if sectionModels == nil {
-				sectionModels = make(map[string]string)
-			}
-			sectionModels[sectionIDs[i]] = val
+	// Treat the unset sentinel as an empty string so the orchestrator falls back
+	// to its default (Claude via ANTHROPIC_API_KEY env var).
+	emptyIfUnset := func(v string) string {
+		if v == unset {
+			return ""
 		}
+		return v
 	}
 
 	return manifest.RealizeOptions{
-		AppName:       fieldGet(r.fields, "app_name"),
-		OutputDir:     fieldGet(r.fields, "output_dir"),
-		Model:         fieldGet(r.fields, "model"),
-		Concurrency:   concurrency,
-		Verify:        fieldGet(r.fields, "verify") == "true",
-		DryRun:        fieldGet(r.fields, "dry_run") == "true",
-		SectionModels: sectionModels,
+		AppName:     fieldGet(r.fields, "app_name"),
+		OutputDir:   fieldGet(r.fields, "output_dir"),
+		Concurrency: concurrency,
+		Verify:      fieldGet(r.fields, "verify") == "true",
+		DryRun:      fieldGet(r.fields, "dry_run") == "true",
+		Provider:    emptyIfUnset(fieldGet(r.fields, "provider")),
+		TierFast:    emptyIfUnset(fieldGet(r.fields, "tier_fast")),
+		TierMedium:  emptyIfUnset(fieldGet(r.fields, "tier_medium")),
+		TierSlow:    emptyIfUnset(fieldGet(r.fields, "tier_slow")),
 	}
 }
 
-// FromRealizeOptions populates the editor from saved manifest RealizeOptions,
-// reversing the ToManifestRealizeOptions() operation.
 func (r RealizeEditor) FromRealizeOptions(ro manifest.RealizeOptions) RealizeEditor {
 	r.fields = setFieldValue(r.fields, "app_name", ro.AppName)
 	r.fields = setFieldValue(r.fields, "output_dir", ro.OutputDir)
-	r.fields = setFieldValue(r.fields, "model", ro.Model)
 	switch ro.Concurrency {
 	case 1, 2, 4, 8:
 		r.fields = setFieldValue(r.fields, "concurrency", fmt.Sprintf("%d", ro.Concurrency))
@@ -228,14 +248,19 @@ func (r RealizeEditor) FromRealizeOptions(ro manifest.RealizeOptions) RealizeEdi
 	r.fields = setFieldValue(r.fields, "verify", boolStr(ro.Verify))
 	r.fields = setFieldValue(r.fields, "dry_run", boolStr(ro.DryRun))
 
-	sectionKeys := []string{"backend_model", "data_model", "contracts_model", "frontend_model", "infra_model", "crosscut_model"}
-	sectionIDs := []string{"backend", "data", "contracts", "frontend", "infra", "crosscut"}
-	for i, sectionID := range sectionIDs {
-		if val, ok := ro.SectionModels[sectionID]; ok && val != "" {
-			r.fields = setFieldValue(r.fields, sectionKeys[i], val)
-		}
+	if ro.Provider != "" {
+		r.fields = setFieldValue(r.fields, "provider", ro.Provider)
+		r = r.syncTierFields()
 	}
-
+	if ro.TierFast != "" {
+		r.fields = setFieldValue(r.fields, "tier_fast", ro.TierFast)
+	}
+	if ro.TierMedium != "" {
+		r.fields = setFieldValue(r.fields, "tier_medium", ro.TierMedium)
+	}
+	if ro.TierSlow != "" {
+		r.fields = setFieldValue(r.fields, "tier_slow", ro.TierSlow)
+	}
 	return r
 }
 
@@ -290,18 +315,24 @@ func (r RealizeEditor) Update(msg tea.Msg) (RealizeEditor, tea.Cmd) {
 	case "enter", " ":
 		if r.activeIdx < len(r.fields) {
 			f := &r.fields[r.activeIdx]
-			if f.Kind == KindSelect {
+			if f.Kind == KindSelect && len(f.Options) > 0 {
 				r.dd.Open = true
 				r.dd.OptIdx = f.SelIdx
-			} else {
+				if r.dd.OptIdx >= len(f.Options) {
+					r.dd.OptIdx = 0
+				}
+			} else if f.Kind != KindSelect {
 				return r.tryEnterInsert()
 			}
 		}
 	case "H", "shift+left":
 		if r.activeIdx < len(r.fields) {
 			f := &r.fields[r.activeIdx]
-			if f.Kind == KindSelect {
+			if f.Kind == KindSelect && len(f.Options) > 0 {
 				f.CyclePrev()
+				if f.Key == "provider" {
+					r = r.syncTierFields()
+				}
 			}
 		}
 	case "i":
@@ -335,6 +366,10 @@ func (r RealizeEditor) updateDropdown(key tea.KeyMsg) (RealizeEditor, tea.Cmd) {
 			f.Value = f.Options[r.dd.OptIdx]
 		}
 		r.dd.Open = false
+		// When provider changes, rebuild tier options.
+		if f.Key == "provider" {
+			r = r.syncTierFields()
+		}
 		if f.PrepareCustomEntry() {
 			return r.tryEnterInsert()
 		}
@@ -410,6 +445,9 @@ var (
 				Foreground(lipgloss.Color(clrComment))
 )
 
+// splitIdx is the index at which the field list splits into the two display groups.
+const splitIdx = 5
+
 func (r RealizeEditor) View(w, h int) string {
 	r.width = w
 	r.formInput.Width = w - 22
@@ -419,34 +457,24 @@ func (r RealizeEditor) View(w, h int) string {
 		"",
 	)
 
-	// Split fields into two groups: base options (first 6) and section models (rest).
-	baseFields := r.fields
-	var sectionFields []Field
-	if len(r.fields) > 6 {
-		baseFields = r.fields[:6]
-		sectionFields = r.fields[6:]
-	}
+	appFields := r.fields[:splitIdx]
+	tierFields := r.fields[splitIdx:]
 
-	// Build scrollable content block, tracking the active field's line position.
 	var content []string
-	activeLine := r.activeIdx // line index within content for the active field
+	activeLine := r.activeIdx
 
-	content = append(content, renderFormFields(w, baseFields, r.activeIdx, r.mode == ModeInsert, r.formInput, r.dd.Open, r.dd.OptIdx)...)
+	content = append(content, renderFormFields(w, appFields, r.activeIdx, r.mode == ModeInsert, r.formInput, r.dd.Open, r.dd.OptIdx)...)
+	content = append(content, "")
+	content = append(content, StyleSectionDesc.Render("  # Provider — select a configured provider and assign a model to each complexity tier"))
 	content = append(content, "")
 
-	if len(sectionFields) > 0 {
-		content = append(content, StyleSectionDesc.Render("  # Section model overrides — set per-pillar model (default = use global model above)"))
-		content = append(content, "")
-		adjIdx := r.activeIdx - 6
-		// Active field is in the section group: offset by base lines + empty + 2 section header lines.
-		if r.activeIdx >= 6 {
-			activeLine = len(baseFields) + 1 + 2 + adjIdx
-		}
-		content = append(content, renderFormFields(w, sectionFields, adjIdx, r.mode == ModeInsert, r.formInput, r.dd.Open, r.dd.OptIdx)...)
-		content = append(content, "")
+	if r.activeIdx >= splitIdx {
+		activeLine = len(appFields) + 1 + 2 + (r.activeIdx - splitIdx)
 	}
 
-	// Start button row
+	content = append(content, renderFormFields(w, tierFields, r.activeIdx-splitIdx, r.mode == ModeInsert, r.formInput, r.dd.Open, r.dd.OptIdx)...)
+	content = append(content, "")
+
 	btn := styleRealizeBtn.Render(" R  Start Realization ")
 	hint := styleRealizeBtnHint.Render("  saves manifest then launches the realize agent")
 	btnLine := "  " + btn + hint

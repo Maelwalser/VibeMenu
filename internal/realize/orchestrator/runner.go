@@ -76,6 +76,10 @@ type TaskRunner struct {
 	// initialTier is the baseline model tier for this task (from tierForKind).
 	// Each retry escalates: TierFast → TierMedium → TierSlow, regardless of provider.
 	initialTier ModelTier
+	// tierOverrides maps abstract ModelTier values to explicit model IDs from the
+	// manifest's realize.tier_fast / tier_medium / tier_slow fields. When non-nil,
+	// the override model ID is used instead of the default providerModels lookup.
+	tierOverrides map[ModelTier]string
 	// depsContext is pre-computed dependency & API reference text injected into
 	// the system prompt to prevent module version hallucination.
 	depsContext string
@@ -407,8 +411,8 @@ func runGoModTidy(ctx context.Context, dir string) {
 
 // agentForAttempt returns the agent to use for a given attempt number.
 // Attempt 0 reuses the pre-built r.agent. Each subsequent retry escalates the
-// ModelTier (TierFast → TierMedium → TierSlow) and rebuilds the agent via
-// buildAgentForTier — which works for any configured provider, not just Claude.
+// ModelTier (TierFast → TierMedium → TierSlow) and rebuilds the agent, respecting
+// any explicit tier model overrides from the manifest.
 func (r *TaskRunner) agentForAttempt(attempt int) agent.Agent {
 	if attempt == 0 {
 		return r.agent
@@ -417,6 +421,15 @@ func (r *TaskRunner) agentForAttempt(attempt int) agent.Agent {
 	for i := 0; i < attempt; i++ {
 		next, _ := escalateTier(tier)
 		tier = next
+	}
+	// Use explicit override model ID when present.
+	if r.tierOverrides != nil {
+		if modelID, ok := r.tierOverrides[tier]; ok && modelID != "" {
+			if r.verbose {
+				r.log("[%s] escalating to %s (%s override) for attempt %d", r.task.ID, modelID, r.providerAssignment.Provider, attempt)
+			}
+			return buildAgentWithModel(r.providerAssignment, modelID, defaultMaxTokens, r.verbose)
+		}
 	}
 	if r.verbose {
 		model := resolveModelIDForTier(r.providerAssignment.Provider, tier, r.providerAssignment.Version)

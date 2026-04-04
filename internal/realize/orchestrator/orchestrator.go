@@ -93,6 +93,41 @@ func (o *Orchestrator) resolveDefaultProvider() manifest.ProviderAssignment {
 	return manifest.ProviderAssignment{Provider: provider, Credential: key}
 }
 
+// resolveDefaultProviderFromManifest extends resolveDefaultProvider by also
+// checking the manifest's realize.provider field and its configured credentials.
+// Priority: --provider flag → manifest provider → env vars → Claude.
+func (o *Orchestrator) resolveDefaultProviderFromManifest(m *manifest.Manifest) manifest.ProviderAssignment {
+	if o.cfg.Provider != "" {
+		return o.resolveDefaultProvider()
+	}
+	if m.Realize.Provider != "" {
+		if pa, ok := m.ConfiguredProviders[m.Realize.Provider]; ok && pa.Credential != "" {
+			return pa
+		}
+	}
+	return o.resolveDefaultProvider()
+}
+
+// buildTierOverrides extracts the explicit tier model IDs from the manifest's
+// realize options. Returns nil when no overrides are configured.
+func buildTierOverrides(m *manifest.Manifest) map[ModelTier]string {
+	ro := m.Realize
+	if ro.TierFast == "" && ro.TierMedium == "" && ro.TierSlow == "" {
+		return nil
+	}
+	overrides := make(map[ModelTier]string, 3)
+	if ro.TierFast != "" {
+		overrides[TierFast] = ro.TierFast
+	}
+	if ro.TierMedium != "" {
+		overrides[TierMedium] = ro.TierMedium
+	}
+	if ro.TierSlow != "" {
+		overrides[TierSlow] = ro.TierSlow
+	}
+	return overrides
+}
+
 // Run loads the manifest, builds the DAG, and executes all tasks.
 func (o *Orchestrator) Run(ctx context.Context) error {
 	// Load and parse manifest.
@@ -109,6 +144,9 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 
 	// Build provider assignments from the new manifest structure.
 	providers := buildProviderAssignments(m)
+
+	// Resolve tier model overrides from the manifest's realize options.
+	tierOverrides := buildTierOverrides(m)
 
 	// Print plan in dry-run mode.
 	if o.cfg.DryRun {
@@ -141,8 +179,8 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	mem := memory.New()
 
 	// defaultProvider is used for tasks that have no per-section manifest override.
-	// Priority: --provider flag → env vars → Claude (uses ANTHROPIC_API_KEY).
-	defaultProvider := o.resolveDefaultProvider()
+	// Priority: --provider flag → manifest provider → env vars → Claude.
+	defaultProvider := o.resolveDefaultProviderFromManifest(m)
 
 	// Resolve the minimum Go runtime version from the Go module proxy once here
 	// so every task — plan, infra, frontend — uses the same consistent version.
@@ -175,7 +213,7 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	for waveIdx, wave := range d.Levels() {
 		o.log("realize: wave %d (%d tasks): %v", waveIdx, len(wave), wave)
 
-		if err := o.runWave(ctx, wave, d, providers, reg, defaultProvider, verifiers, writer, st, mem, resolvedGoVersion, resolvedGoModules); err != nil {
+		if err := o.runWave(ctx, wave, d, providers, reg, defaultProvider, tierOverrides, verifiers, writer, st, mem, resolvedGoVersion, resolvedGoModules); err != nil {
 			return fmt.Errorf("wave %d: %w", waveIdx, err)
 		}
 	}
@@ -213,6 +251,7 @@ func (o *Orchestrator) runWave(
 	providers manifest.ProviderAssignments,
 	reg *skills.FileRegistry,
 	defaultProvider manifest.ProviderAssignment,
+	tierOverrides map[ModelTier]string,
 	verifiers *verify.Registry,
 	writer *output.Writer,
 	st *state.Store,
@@ -275,6 +314,7 @@ func (o *Orchestrator) runWave(
 				logFn:              o.cfg.LogFunc,
 				providerAssignment: pa,
 				initialTier:        initialTier,
+				tierOverrides:      tierOverrides,
 				depsContext:        buildDepsContext(gctx, task, resolvedGoVersion, resolvedGoModules),
 			}
 			return runner.Run(gctx)

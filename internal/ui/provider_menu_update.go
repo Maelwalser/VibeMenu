@@ -96,24 +96,13 @@ func (p ProviderMenu) Update(msg tea.Msg) (ProviderMenu, tea.Cmd) {
 
 	// ── Vertical navigation ───────────────────────────────────────────────────
 	case "j", "down":
-		switch {
-		case p.focus == pmFocusModels && p.dropdownOpen:
-			vers := p.providers[p.cursor].models[p.modelCursor].versions
-			if p.versionCursor < len(vers)-1 {
-				p.versionCursor++
-			}
-		case p.focus == pmFocusProviders:
+		switch p.focus {
+		case pmFocusProviders:
 			if p.cursor < len(p.providers)-1 {
 				p.cursor++
 			}
-			p.modelCursor, p.authCursor = 0, 0
-			p.dropdownOpen = false
-		case p.focus == pmFocusModels:
-			models := p.providers[p.cursor].models
-			if p.modelCursor < len(models)-1 {
-				p.modelCursor++
-			}
-		case p.focus == pmFocusAuth:
+			p.authCursor = 0
+		case pmFocusAuth:
 			auths := p.providers[p.cursor].authMethods
 			if p.authCursor < len(auths)-1 {
 				p.authCursor++
@@ -121,46 +110,27 @@ func (p ProviderMenu) Update(msg tea.Msg) (ProviderMenu, tea.Cmd) {
 		}
 
 	case "k", "up":
-		switch {
-		case p.focus == pmFocusModels && p.dropdownOpen:
-			if p.versionCursor > 0 {
-				p.versionCursor--
-			}
-		case p.focus == pmFocusProviders:
+		switch p.focus {
+		case pmFocusProviders:
 			if p.cursor > 0 {
 				p.cursor--
 			}
-			p.modelCursor, p.authCursor = 0, 0
-			p.dropdownOpen = false
-		case p.focus == pmFocusModels:
-			if p.modelCursor > 0 {
-				p.modelCursor--
-			}
-		case p.focus == pmFocusAuth:
+			p.authCursor = 0
+		case pmFocusAuth:
 			if p.authCursor > 0 {
 				p.authCursor--
 			}
 		}
 
-	// ── Horizontal focus movement (blocked while dropdown open) ───────────────
+	// ── Horizontal focus movement ─────────────────────────────────────────────
 	case "l", "tab":
-		if !p.dropdownOpen {
-			switch p.focus {
-			case pmFocusProviders:
-				p.focus = pmFocusModels
-			case pmFocusModels:
-				p.focus = pmFocusAuth
-			}
+		if p.focus == pmFocusProviders {
+			p.focus = pmFocusAuth
 		}
 
 	case "h", "shift+tab":
-		if !p.dropdownOpen {
-			switch p.focus {
-			case pmFocusModels:
-				p.focus = pmFocusProviders
-			case pmFocusAuth:
-				p.focus = pmFocusModels
-			}
+		if p.focus == pmFocusAuth {
+			p.focus = pmFocusProviders
 		}
 
 	// ── Clear current provider's configuration ────────────────────────────────
@@ -169,54 +139,27 @@ func (p ProviderMenu) Update(msg tea.Msg) (ProviderMenu, tea.Cmd) {
 			p = p.clearCurrentProvider()
 		}
 
-	// ── Confirm / open dropdown ───────────────────────────────────────────────
+	// ── Confirm ───────────────────────────────────────────────────────────────
 	case "enter", " ":
 		switch p.focus {
 		case pmFocusProviders:
 			// Start configuring the hovered provider; load existing config.
 			p.selectedProv = p.cursor
-			p.selectedModel = -1
-			p.selectedVersion = -1
 			p.selectedAuth = -1
-			p.modelCursor = 0
 			p.authCursor = 0
 			p = p.loadStateForProvider(p.providers[p.cursor].label)
-			p.focus = pmFocusModels
-
-		case pmFocusModels:
-			if p.dropdownOpen {
-				p.selectedModel = p.modelCursor
-				p.selectedVersion = p.versionCursor
-				p.selectedAuth = -1
-				p.dropdownOpen = false
-				p.focus = pmFocusAuth
-				p.authCursor = 0
-			} else {
-				p.dropdownOpen = true
-				p.versionCursor = 0
-				if p.selectedProv == p.cursor && p.selectedModel == p.modelCursor && p.selectedVersion >= 0 {
-					p.versionCursor = p.selectedVersion
-				}
-			}
+			p.focus = pmFocusAuth
 
 		case pmFocusAuth:
 			p.selectedAuth = p.authCursor
 			return p.enterCredentialStep()
 		}
 
-	// ── Cancel dropdown / step back ───────────────────────────────────────────
+	// ── Step back ─────────────────────────────────────────────────────────────
 	case "esc":
-		if p.dropdownOpen {
-			p.dropdownOpen = false
-			p.versionCursor = 0
-		} else if p.focus != pmFocusProviders {
-			switch p.focus {
-			case pmFocusAuth:
-				p.focus = pmFocusModels
-			case pmFocusModels:
-				p.focus = pmFocusProviders
-				p.selectedProv = -1
-			}
+		if p.focus == pmFocusAuth {
+			p.focus = pmFocusProviders
+			p.selectedProv = -1
 		}
 	}
 

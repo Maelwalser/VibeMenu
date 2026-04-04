@@ -58,21 +58,35 @@ func renderFormFields(w int, fields []Field, activeIdx int, insertMode bool, inp
 	for i, f := range fields {
 		isCur := i == activeIdx
 
+		// Capture the cursor-row background once per row so every individually-
+		// styled component (line number, label, separator, value) carries it.
+		// Without this the ANSI reset at the end of each styled segment clears the
+		// background set by the outer row wrapper, leaving only bare spaces lit up.
+		var curBG lipgloss.TerminalColor
+		if isCur {
+			curBG = activeCurLineStyle().GetBackground()
+		}
+
 		var lineNo string
 		if isCur {
-			lineNo = StyleCurLineNum.Render(fmt.Sprintf("%3d ", i+1))
+			lineNo = StyleCurLineNum.Background(curBG).Render(fmt.Sprintf("%3d ", i+1))
 		} else {
 			lineNo = StyleLineNum.Render(fmt.Sprintf("%3d ", i+1))
 		}
 
 		var keyStr string
 		if isCur {
-			keyStr = StyleFieldKeyActive.Render(f.Label)
+			keyStr = StyleFieldKeyActive.Background(curBG).Render(f.Label)
 		} else {
 			keyStr = StyleFieldKey.Render(f.Label)
 		}
 
-		eq := StyleEquals.Render(" = ")
+		var eq string
+		if isCur {
+			eq = StyleEquals.Background(curBG).Render(" = ")
+		} else {
+			eq = StyleEquals.Render(" = ")
+		}
 
 		var valStr string
 		switch {
@@ -85,48 +99,81 @@ func renderFormFields(w int, fields []Field, activeIdx int, insertMode bool, inp
 				val = val[:valW-3] + "…"
 			}
 			if isCur {
-				val = StyleFieldValActive.Render(val)
+				val = StyleFieldValActive.Background(curBG).Render(val)
+				arrow := StyleSelectArrow.Background(curBG)
+				if ddOpen {
+					valStr = val + arrow.Render(" ▴")
+				} else {
+					valStr = val + arrow.Render(" ▾")
+				}
 			} else {
 				val = StyleFieldVal.Render(val)
-			}
-			if isCur && ddOpen {
-				valStr = val + StyleSelectArrow.Render(" ▴")
-			} else {
-				valStr = val + StyleSelectArrow.Render(" ▾")
+				if ddOpen {
+					valStr = val + StyleSelectArrow.Render(" ▴")
+				} else {
+					valStr = val + StyleSelectArrow.Render(" ▾")
+				}
 			}
 		case f.Kind == KindMultiSelect && f.ColorSwatch:
-			arrow := StyleSelectArrow.Render(" ▾")
-			if isCur && ddOpen {
-				arrow = StyleSelectArrow.Render(" ▴")
-			}
-			if len(f.SelectedIdxs) == 0 {
-				placeholder := "(none)"
-				if isCur {
-					valStr = StyleFieldValActive.Render(placeholder) + arrow
-				} else {
-					valStr = StyleFieldVal.Render(placeholder) + arrow
+			if isCur {
+				arrow := StyleSelectArrow.Background(curBG)
+				arrowStr := arrow.Render(" ▾")
+				if ddOpen {
+					arrowStr = arrow.Render(" ▴")
 				}
-			} else {
-				var pieces []string
-				for _, idx := range f.SelectedIdxs {
-					if idx >= 0 && idx < len(f.Options) {
-						hex := f.Options[idx]
-						if isCustomOption(hex) {
-							hex = f.CustomText
-						}
-						if strings.HasPrefix(hex, "#") {
-							swatch := lipgloss.NewStyle().Foreground(lipgloss.Color(hex)).Bold(true).Render("■")
-							pieces = append(pieces, swatch+StyleFieldVal.Render(" "+hex))
-						} else {
-							pieces = append(pieces, StyleSectionDesc.Render("■")+StyleFieldVal.Render(" custom"))
+				if len(f.SelectedIdxs) == 0 {
+					valStr = StyleFieldValActive.Background(curBG).Render("(none)") + arrowStr
+				} else {
+					var pieces []string
+					for _, idx := range f.SelectedIdxs {
+						if idx >= 0 && idx < len(f.Options) {
+							hex := f.Options[idx]
+							if isCustomOption(hex) {
+								hex = f.CustomText
+							}
+							if strings.HasPrefix(hex, "#") {
+								swatch := lipgloss.NewStyle().Foreground(lipgloss.Color(hex)).Background(curBG).Bold(true).Render("■")
+								pieces = append(pieces, swatch+StyleFieldVal.Background(curBG).Render(" "+hex))
+							} else {
+								pieces = append(pieces, StyleSectionDesc.Background(curBG).Render("■")+StyleFieldVal.Background(curBG).Render(" custom"))
+							}
 						}
 					}
+					val := strings.Join(pieces, StyleSectionDesc.Background(curBG).Render(" · "))
+					if lipgloss.Width(val) > valW-2 {
+						val = StyleFieldVal.Background(curBG).Render(fmt.Sprintf("%d colors", len(f.SelectedIdxs)))
+					}
+					valStr = val + arrowStr
 				}
-				val := strings.Join(pieces, StyleSectionDesc.Render(" · "))
-				if lipgloss.Width(val) > valW-2 {
-					val = StyleFieldVal.Render(fmt.Sprintf("%d colors", len(f.SelectedIdxs)))
+			} else {
+				arrow := StyleSelectArrow.Render(" ▾")
+				if ddOpen {
+					arrow = StyleSelectArrow.Render(" ▴")
 				}
-				valStr = val + arrow
+				if len(f.SelectedIdxs) == 0 {
+					valStr = StyleFieldVal.Render("(none)") + arrow
+				} else {
+					var pieces []string
+					for _, idx := range f.SelectedIdxs {
+						if idx >= 0 && idx < len(f.Options) {
+							hex := f.Options[idx]
+							if isCustomOption(hex) {
+								hex = f.CustomText
+							}
+							if strings.HasPrefix(hex, "#") {
+								swatch := lipgloss.NewStyle().Foreground(lipgloss.Color(hex)).Bold(true).Render("■")
+								pieces = append(pieces, swatch+StyleFieldVal.Render(" "+hex))
+							} else {
+								pieces = append(pieces, StyleSectionDesc.Render("■")+StyleFieldVal.Render(" custom"))
+							}
+						}
+					}
+					val := strings.Join(pieces, StyleSectionDesc.Render(" · "))
+					if lipgloss.Width(val) > valW-2 {
+						val = StyleFieldVal.Render(fmt.Sprintf("%d colors", len(f.SelectedIdxs)))
+					}
+					valStr = val + arrow
+				}
 			}
 		case f.Kind == KindMultiSelect:
 			val := f.DisplayValue()
@@ -138,14 +185,20 @@ func renderFormFields(w int, fields []Field, activeIdx int, insertMode bool, inp
 				val = val[:valW-3] + "…"
 			}
 			if isCur {
-				val = StyleFieldValActive.Render(val)
+				val = StyleFieldValActive.Background(curBG).Render(val)
+				arrow := StyleSelectArrow.Background(curBG)
+				if ddOpen {
+					valStr = val + arrow.Render(" ▴")
+				} else {
+					valStr = val + arrow.Render(" ▾")
+				}
 			} else {
 				val = StyleFieldVal.Render(val)
-			}
-			if isCur && ddOpen {
-				valStr = val + StyleSelectArrow.Render(" ▴")
-			} else {
-				valStr = val + StyleSelectArrow.Render(" ▾")
+				if ddOpen {
+					valStr = val + StyleSelectArrow.Render(" ▴")
+				} else {
+					valStr = val + StyleSelectArrow.Render(" ▾")
+				}
 			}
 		default:
 			dv := f.DisplayValue()
@@ -153,9 +206,13 @@ func renderFormFields(w int, fields []Field, activeIdx int, insertMode bool, inp
 				dv = dv[:valW-1] + "…"
 			}
 			if dv == "" {
-				valStr = StyleSectionDesc.Render("_")
+				if isCur {
+					valStr = StyleSectionDesc.Background(curBG).Render("_")
+				} else {
+					valStr = StyleSectionDesc.Render("_")
+				}
 			} else if isCur {
-				valStr = StyleFieldValActive.Render(dv)
+				valStr = StyleFieldValActive.Background(curBG).Render(dv)
 			} else {
 				valStr = StyleFieldVal.Render(dv)
 			}
@@ -650,10 +707,17 @@ func newFormTextArea() textarea.Model {
 	ta.SetHeight(8)
 	ta.FocusedStyle.Base = lipgloss.NewStyle().
 		Foreground(lipgloss.Color(clrFg)).
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color(clrFgDim))
-	ta.BlurredStyle.Base = ta.FocusedStyle.Base
-	ta.FocusedStyle.Text = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFg))
+		Background(lipgloss.Color(clrBg)).
+		BorderStyle(sharpBorder).
+		BorderForeground(lipgloss.Color(clrYellow))
+	ta.BlurredStyle.Base = lipgloss.NewStyle().
+		Foreground(lipgloss.Color(clrFg)).
+		Background(lipgloss.Color(clrBg)).
+		BorderStyle(sharpBorder).
+		BorderForeground(lipgloss.Color(clrComment))
+	ta.FocusedStyle.Text = lipgloss.NewStyle().
+		Foreground(lipgloss.Color(clrFg)).
+		Background(lipgloss.Color(clrBg))
 	ta.BlurredStyle.Text = ta.FocusedStyle.Text
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle().Background(lipgloss.Color(clrBgHL))
 	ta.CharLimit = 0
@@ -797,5 +861,75 @@ func fillTildes(lines []string, h int) string {
 		lines = lines[:h]
 	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+// withSidePanel places left content and a right ASCII art panel side by side,
+// separated by a thin vertical rule.
+//
+// Cropping behaviour:
+//   - Horizontal: if artW < natural art width, a center-crop window is used so
+//     the middle section of symmetric art stays visible. When artW >= natural
+//     width no cropping occurs and trailing spaces are stripped.
+//   - Vertical: no cropping — art renders top-to-bottom; rows beyond the art's
+//     line count leave the right panel empty (art need not fill the full height).
+func withSidePanel(left string, artLines []string, leftW, artW, h int) string {
+	leftLines := strings.Split(strings.TrimRight(left, "\n"), "\n")
+	sep := StyleArtSep.Render("│")
+
+	// Compute the natural (trimmed) width of the widest art line.
+	natW := 0
+	for _, l := range artLines {
+		if rw := len([]rune(strings.TrimRight(l, " "))); rw > natW {
+			natW = rw
+		}
+	}
+
+	// Horizontal center-crop offset: positive only when panel is narrower than art.
+	hOffset := 0
+	if natW > artW {
+		hOffset = (natW - artW) / 2
+	}
+
+	var sb strings.Builder
+	for i := 0; i < h; i++ {
+		// ── Left content line — padded to leftW so the separator aligns. ──────
+		var leftLine string
+		if i < len(leftLines) {
+			leftLine = leftLines[i]
+		}
+		lw := lipgloss.Width(leftLine)
+		if lw < leftW {
+			leftLine += strings.Repeat(" ", leftW-lw)
+		}
+
+		// ── Right art line — center-crop then strip trailing spaces. ──────────
+		var rightLine string
+		if i < len(artLines) {
+			runes := []rune(artLines[i])
+			start := hOffset
+			if start > len(runes) {
+				start = len(runes)
+			}
+			end := start + artW
+			if end > len(runes) {
+				end = len(runes)
+			}
+			if start < end {
+				trimmed := strings.TrimRight(string(runes[start:end]), " ")
+				if trimmed != "" {
+					rightLine = StyleArtPanel.Render(trimmed)
+				}
+			}
+		}
+
+		sb.WriteString(leftLine)
+		sb.WriteString(sep)
+		sb.WriteString(rightLine)
+		if i < h-1 {
+			sb.WriteString("\n")
+		}
+	}
+	sb.WriteString("\n")
+	return sb.String()
 }
 

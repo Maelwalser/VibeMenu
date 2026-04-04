@@ -10,14 +10,13 @@ import (
 // ── Layout constants ──────────────────────────────────────────────────────────
 
 const (
-	pmCol1W = 12 // provider column visible width
-	pmCol2W = 16 // model column visible width
-	pmCol3W = 12 // auth column visible width (last, not padded by pmRow)
+	pmCol1W = 14 // provider column visible width
+	pmCol2W = 28 // auth column visible width (last, not padded by pmRow)
 	// pmBoxW is the Width() argument for StyleModalBorder.
 	// StyleModalBorder has Padding(0,1) + RoundedBorder, so actual rendered
 	// width = pmBoxW + 2 (padding) + 2 (border) = pmBoxW + 4.
-	// +2 for the two │ column separators inserted by pmRow.
-	pmBoxW = pmCol1W + 1 + pmCol2W + 1 + pmCol3W // 42 → total box ≈ 46 chars
+	// +1 for the │ column separator inserted by pmRow.
+	pmBoxW = pmCol1W + 1 + pmCol2W // 43 → total box ≈ 47 chars
 )
 
 // ── View ──────────────────────────────────────────────────────────────────────
@@ -44,22 +43,18 @@ func (p ProviderMenu) View() string {
 	rows = append(rows, p.renderDividers())
 
 	col1 := p.buildProviderCol()
-	col2 := p.buildModelCol()
-	col3 := p.buildAuthCol()
+	col2 := p.buildAuthCol()
 
-	h := max(max(len(col1), len(col2)), len(col3))
+	h := max(len(col1), len(col2))
 	for len(col1) < h {
 		col1 = append(col1, "")
 	}
 	for len(col2) < h {
 		col2 = append(col2, "")
 	}
-	for len(col3) < h {
-		col3 = append(col3, "")
-	}
 
 	for i := 0; i < h; i++ {
-		rows = append(rows, pmRow(col1[i], col2[i], col3[i]))
+		rows = append(rows, pmRow(col1[i], col2[i]))
 	}
 
 	rows = append(rows, "")
@@ -93,8 +88,6 @@ func (p ProviderMenu) View() string {
 		default:
 			hints = hintBarBg(modalBg, "Enter", "confirm", "Esc", "back")
 		}
-	case p.dropdownOpen:
-		hints = hintBarBg(modalBg, "j/k", "version", "Enter", "confirm", "Esc", "cancel")
 	case p.focus == pmFocusProviders:
 		hints = hintBarBg(modalBg, "j/k", "navigate", "Enter", "configure", "x", "clear", "M", "close")
 	default:
@@ -194,22 +187,15 @@ func (p ProviderMenu) renderHeaders() string {
 	bg := lipgloss.Color(clrBg2)
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim)).Background(bg)
 	active := lipgloss.NewStyle().Foreground(lipgloss.Color(clrCyan)).Bold(true).Underline(true).Background(bg)
-	dropdown := lipgloss.NewStyle().Foreground(lipgloss.Color(clrOrange)).Bold(true).Background(bg)
 
-	h1, h2, h3 := dim, dim, dim
+	h1, h2 := dim, dim
 	switch p.focus {
 	case pmFocusProviders:
 		h1 = active
-	case pmFocusModels:
-		if p.dropdownOpen {
-			h2 = dropdown
-		} else {
-			h2 = active
-		}
 	case pmFocusAuth:
-		h3 = active
+		h2 = active
 	}
-	return pmRow(h1.Render("PROVIDER"), h2.Render("MODEL"), h3.Render("AUTH"))
+	return pmRow(h1.Render("PROVIDER"), h2.Render("AUTH METHOD"))
 }
 
 // renderDividers returns the ─── separator row under the headers.
@@ -219,7 +205,6 @@ func (p ProviderMenu) renderDividers() string {
 	return pmRow(
 		s.Render(strings.Repeat("─", pmCol1W)),
 		s.Render(strings.Repeat("─", pmCol2W)),
-		s.Render(strings.Repeat("─", pmCol3W)),
 	)
 }
 
@@ -268,100 +253,14 @@ func (p ProviderMenu) buildProviderCol() []string {
 	return lines
 }
 
-// buildModelCol returns one string per row for the model column.
-// When the dropdown is open, version rows are injected after the active tier.
-func (p ProviderMenu) buildModelCol() []string {
-	models := p.providers[p.cursor].models
-	var lines []string
-
-	for i, tier := range models {
-		isCur := i == p.modelCursor
-		isSel := p.selectedProv == p.cursor && p.selectedModel == i
-		isHL := isCur && p.focus == pmFocusModels && !p.dropdownOpen
-
-		rowBg := lipgloss.Color(clrBg2)
-		if isHL {
-			rowBg = lipgloss.Color(clrBgHL)
-		}
-
-		displayName := tier.name
-		if isSel && p.selectedVersion >= 0 && p.selectedVersion < len(tier.versions) {
-			displayName = tier.name + " " + tier.versions[p.selectedVersion]
-		}
-
-		var indicator string
-		if isCur && p.focus == pmFocusModels {
-			if p.dropdownOpen {
-				indicator = lipgloss.NewStyle().Foreground(lipgloss.Color(clrYellow)).Background(lipgloss.Color(clrBg2)).Render(" ▴")
-			} else {
-				indicator = lipgloss.NewStyle().Foreground(lipgloss.Color(clrYellow)).Background(rowBg).Render(" ▾")
-			}
-		}
-
-		arrow := lipgloss.NewStyle().Background(rowBg).Render("  ")
-		if isCur {
-			arrow = lipgloss.NewStyle().Foreground(lipgloss.Color(clrYellow)).Background(rowBg).Render("▶ ")
-		}
-
-		var label string
-		switch {
-		case isSel && !isCur:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Bold(true).Background(lipgloss.Color(clrBg2)).Render("◈ " + displayName)
-		case isSel && isCur:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrGreen)).Bold(true).Background(rowBg).Render("◈ " + displayName)
-		case isCur && p.focus == pmFocusModels:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrCyan)).Bold(true).Background(rowBg).Render(displayName)
-		case isCur:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFg)).Background(lipgloss.Color(clrBg2)).Render(displayName)
-		default:
-			label = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim)).Background(lipgloss.Color(clrBg2)).Render(displayName)
-		}
-
-		cell := arrow + label + indicator
-		if isHL {
-			cell = pmHighlight(cell, pmCol2W)
-		}
-		lines = append(lines, cell)
-
-		// ── Inject version dropdown rows ──────────────────────────────────────
-		if isCur && p.dropdownOpen {
-			for j, v := range tier.versions {
-				isVCur := j == p.versionCursor
-				vBg := lipgloss.Color(clrBg2)
-				if isVCur {
-					vBg = lipgloss.Color(clrBgHL)
-				}
-
-				var vArrow, vLabel string
-				if isVCur {
-					vArrow = lipgloss.NewStyle().Foreground(lipgloss.Color(clrYellow)).Background(vBg).Render("  ▸ ")
-					vLabel = lipgloss.NewStyle().Foreground(lipgloss.Color(clrBlue)).Bold(true).Background(vBg).Render(v)
-				} else {
-					vArrow = lipgloss.NewStyle().Background(lipgloss.Color(clrBg2)).Render("    ")
-					vLabel = lipgloss.NewStyle().Foreground(lipgloss.Color(clrFgDim)).Background(lipgloss.Color(clrBg2)).Render(v)
-				}
-
-				vCell := vArrow + vLabel
-				if isVCur {
-					vCell = pmHighlight(vCell, pmCol2W)
-				}
-				lines = append(lines, vCell)
-			}
-		}
-	}
-	return lines
-}
-
 // buildAuthCol returns one string per row for the auth method column.
+// Shows the auth methods for the currently hovered provider.
 func (p ProviderMenu) buildAuthCol() []string {
 	auths := p.providers[p.cursor].authMethods
 	lines := make([]string, 0, len(auths))
 	for i, a := range auths {
 		isCur := i == p.authCursor
-		isSel := p.selectedProv == p.cursor &&
-			p.selectedModel >= 0 &&
-			p.selectedVersion >= 0 &&
-			i == p.selectedAuth
+		isSel := p.selectedProv == p.cursor && i == p.selectedAuth
 		isHL := isCur && p.focus == pmFocusAuth
 
 		rowBg := lipgloss.Color(clrBg2)
@@ -388,7 +287,7 @@ func (p ProviderMenu) buildAuthCol() []string {
 
 		cell := arrow + label
 		if isHL {
-			cell = pmHighlight(cell, pmCol3W)
+			cell = pmHighlight(cell, pmCol2W)
 		}
 		lines = append(lines, cell)
 	}
@@ -397,14 +296,13 @@ func (p ProviderMenu) buildAuthCol() []string {
 
 // ── Layout helpers ────────────────────────────────────────────────────────────
 
-// pmRow assembles three column cells into one display line, with │ separators
-// between each column for a clean grid layout.
-func pmRow(col1, col2, col3 string) string {
+// pmRow assembles two column cells into one display line, with a │ separator.
+func pmRow(col1, col2 string) string {
 	sep := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(clrViolet)).
 		Background(lipgloss.Color(clrBg2)).
 		Render("│")
-	return pmPad(col1, pmCol1W) + sep + pmPad(col2, pmCol2W) + sep + pmPad(col3, pmCol3W)
+	return pmPad(col1, pmCol1W) + sep + pmPad(col2, pmCol2W)
 }
 
 // pmPad pads s with background-colored spaces until its visible width equals toW.

@@ -39,7 +39,7 @@ type WelcomeModel struct {
 
 func newWelcomeModel() WelcomeModel {
 	inp := newFormInput()
-	inp.Width = 48
+	inp.Width = 46
 	recent := manifest.LoadRecentPaths()
 	var recentPath string
 	if len(recent) > 0 {
@@ -103,8 +103,6 @@ func (w WelcomeModel) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "k", "up":
 			w.cursor = (w.cursor - 1 + n) % n
 		case "enter", " ":
-			// When a recent path is shown it occupies index 0;
-			// Open Existing and New Project shift down by one.
 			openIdx := 0
 			newIdx := 1
 			if w.recentPath != "" {
@@ -113,7 +111,6 @@ func (w WelcomeModel) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			switch {
 			case w.recentPath != "" && w.cursor == 0:
-				// Load the most recent manifest directly.
 				mf, err := manifest.Load(w.recentPath)
 				if err != nil {
 					w.errMsg = fmt.Sprintf("error: %v", err)
@@ -195,12 +192,15 @@ func (w WelcomeModel) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return w, nil
 }
 
-// vibeBanner is the 3-line ASCII art logo rendered inside the welcome box.
-// Width: 28 chars — fits comfortably within a 60-char inner area.
-var vibeBanner = [3]string{
-	"╦  ╦╦╔╗ ╔═╗╔╦╗╔═╗╔╗╔╦ ╦",
-	"╚╗╔╝║╠╩╗║╣ ║║║║╣ ║║║║ ║",
-	" ╚╝ ╩╚═╝╚═╝╩ ╩╚═╝╝╚╝╚═╝",
+// vibeBanner — ASCII art wordmark, 7 lines (no trailing spaces).
+var vibeBanner = [7]string{
+	`  _     _   __     _____     _____  __    __    _____  __   __   __    __`,
+	` /_/\ /\_\ /\_\  /\  __/\  /\_____\/_/\  /\_\ /\_____\/_/\ /\_\ /\_\  /_/\`,
+	` ) ) ) ( ( \/_/  ) )(_ ) )( (_____/) ) \/ ( (( (_____/) ) \ ( (( ( (  ) ) )`,
+	`/_/ / \ \_\ /\_\/ / __/ /  \ \__\ /_/ \  / \_\\ \__\ /_/   \ \_\\ \ \/ / /`,
+	`\ \ \_/ / // / /\ \  _\ \  / /__/_\ \ \\// / // /__/_\ \ \   / / \ \  / /`,
+	` \ \   / /( (_(  ) )(__) )( (_____\)_) )( (_(( (_____\)_) \ (_(  ( (__) )`,
+	`  \_\_/_/  \/_/  \/____\/  \/_____/\_\/  \/_/ \/_____/\_\/ \/_/   \/__\/`,
 }
 
 // View satisfies tea.Model.
@@ -209,106 +209,125 @@ func (w WelcomeModel) View() string {
 		return "Loading…"
 	}
 
-	const boxWidth = 62
+	modalBg := lipgloss.Color(clrBg2)
+	dim := lipgloss.Color(clrFgDim)
+	border := lipgloss.Color(clrComment)
+
+	// innerW is derived from the widest banner line plus 2 so the bounding box
+	// of the art has exactly 1 space of margin on each side (left and right).
+	innerW := 0
+	for _, line := range vibeBanner {
+		if len(line) > innerW {
+			innerW = len(line)
+		}
+	}
+	innerW += 2
+	boxWidth := innerW + 4 // border (1+1) + padding (1+1)
+
+	center := lipgloss.NewStyle().Width(innerW).Align(lipgloss.Center).Background(modalBg)
+	left := lipgloss.NewStyle().Width(innerW).Background(modalBg)
+
+	bannerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(clrYellow)).
+		Bold(true).
+		Background(modalBg)
 
 	var b strings.Builder
-	modalBg := lipgloss.Color(clrBg2)
 
-	innerW := boxWidth - 4
-	centerIn := lipgloss.NewStyle().Width(innerW).Align(lipgloss.Center).Background(modalBg)
-
-	// ASCII art banner — gradient from teal → cyan → lavender across lines.
-	bannerColors := [3]string{clrTeal, clrCyan, clrViolet}
-	for i, line := range vibeBanner {
-		styled := lipgloss.NewStyle().
-			Foreground(lipgloss.Color(bannerColors[i])).
-			Bold(true).
-			Background(modalBg).
-			Render(line)
-		b.WriteString(centerIn.Render(styled))
+	// ── Wordmark ─────────────────────────────────────────────────────────────
+	b.WriteString("\n")
+	for _, line := range vibeBanner {
+		b.WriteString(bannerStyle.Render(" " + line))
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
 
-	// Subtitle + decorative divider.
-	subtitle := StyleHelpDesc.Background(modalBg).Render("declarative system architecture")
-	b.WriteString(centerIn.Render(subtitle))
-	b.WriteString("\n")
-	divider := StyleDivider.Background(modalBg).Render(strings.Repeat("─", innerW))
-	b.WriteString(divider)
+	// Subtitle.
+	b.WriteString(center.Render(
+		lipgloss.NewStyle().Foreground(dim).Background(modalBg).
+			Render("declarative system architecture"),
+	))
 	b.WriteString("\n\n")
 
+	// Thin rule.
+	b.WriteString(lipgloss.NewStyle().Foreground(border).Background(modalBg).
+		Render(strings.Repeat("─", innerW)))
+	b.WriteString("\n\n")
+
+	// ── Phase content ─────────────────────────────────────────────────────────
 	switch w.phase {
 	case welcomePhaseMenu:
 		var options []string
-		menuIcons := []string{}
+		var icons []string
 		if w.recentPath != "" {
 			options = append(options, "Continue  "+shortPath(w.recentPath))
-			menuIcons = append(menuIcons, "▶")
+			icons = append(icons, "▶")
 		}
 		options = append(options, "Open Existing Manifest", "New Project")
-		menuIcons = append(menuIcons, "◈", "✦")
+		icons = append(icons, "◈", "+")
 
 		for i, opt := range options {
-			icon := menuIcons[i]
 			if i == w.cursor {
-				indicator := StyleNeonViolet.Background(modalBg).Render("❯ " + icon + " ")
-				label := StyleFieldValActive.Background(modalBg).Bold(true).Render(opt)
-				b.WriteString(indicator + label)
+				row := lipgloss.NewStyle().Foreground(lipgloss.Color(clrYellow)).Bold(true).Background(modalBg).Render("❯ "+icons[i]+" ") +
+					lipgloss.NewStyle().Foreground(lipgloss.Color(clrFg)).Bold(true).Background(modalBg).Render(opt)
+				b.WriteString(left.Render(row))
 			} else {
-				indicator := StyleHelpDesc.Background(modalBg).Render("  " + icon + " ")
-				label := StyleFieldVal.Background(modalBg).Render(opt)
-				b.WriteString(indicator + label)
+				row := lipgloss.NewStyle().Foreground(dim).Background(modalBg).Render("  "+icons[i]+" ") +
+					lipgloss.NewStyle().Foreground(dim).Background(modalBg).Render(opt)
+				b.WriteString(left.Render(row))
 			}
 			b.WriteString("\n")
 		}
 		if w.errMsg != "" {
 			b.WriteString("\n")
-			b.WriteString(StyleMsgErr.Background(modalBg).Render("✗ " + w.errMsg))
+			b.WriteString(StyleMsgErr.Background(modalBg).Render("  ✗ " + w.errMsg))
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")
-		hints := StyleHelpKey.Background(modalBg).Render("j/k") +
-			StyleHelpDesc.Background(modalBg).Render(" navigate  ") +
-			StyleHelpKey.Background(modalBg).Render("Enter") +
-			StyleHelpDesc.Background(modalBg).Render(" select  ") +
-			StyleHelpKey.Background(modalBg).Render("q") +
-			StyleHelpDesc.Background(modalBg).Render(" quit")
-		b.WriteString(hints)
+		b.WriteString(lipgloss.NewStyle().Foreground(dim).Background(modalBg).
+			Render("  j/k  navigate   Enter  select   q  quit"))
 
 	case welcomePhaseOpenPath:
-		b.WriteString(StyleNeonTeal.Background(modalBg).Render("◈  Open Existing Manifest"))
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(clrYellow)).Bold(true).Background(modalBg).
+			Render("◈  Open Existing Manifest"))
 		b.WriteString("\n\n")
-		b.WriteString(StyleFieldKeyActive.Background(modalBg).Render("Path ") +
+		b.WriteString(StyleFieldKeyActive.Background(modalBg).Render("  Path ") +
 			StyleEquals.Background(modalBg).Render(" = ") +
 			w.input.View())
 		if w.errMsg != "" {
 			b.WriteString("\n\n")
-			b.WriteString(StyleMsgErr.Background(modalBg).Render("✗ " + w.errMsg))
+			b.WriteString(StyleMsgErr.Background(modalBg).Render("  ✗ " + w.errMsg))
 		}
 		b.WriteString("\n\n")
-		b.WriteString(StyleHelpKey.Background(modalBg).Render("Enter") +
-			StyleHelpDesc.Background(modalBg).Render(" load   ") +
-			StyleHelpKey.Background(modalBg).Render("Esc") +
-			StyleHelpDesc.Background(modalBg).Render(" back"))
+		b.WriteString(lipgloss.NewStyle().Foreground(dim).Background(modalBg).
+			Render("  Enter  load     Esc  back"))
 
 	case welcomePhaseNewName:
-		b.WriteString(StyleNeonViolet.Background(modalBg).Render("✦  New Project"))
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(clrYellow)).Bold(true).Background(modalBg).
+			Render("+  New Project"))
 		b.WriteString("\n\n")
-		b.WriteString(StyleFieldKeyActive.Background(modalBg).Render("Name ") +
+		b.WriteString(StyleFieldKeyActive.Background(modalBg).Render("  Name ") +
 			StyleEquals.Background(modalBg).Render(" = ") +
 			w.input.View())
 		if w.errMsg != "" {
 			b.WriteString("\n\n")
-			b.WriteString(StyleMsgErr.Background(modalBg).Render("✗ " + w.errMsg))
+			b.WriteString(StyleMsgErr.Background(modalBg).Render("  ✗ " + w.errMsg))
 		}
 		b.WriteString("\n\n")
-		b.WriteString(StyleHelpKey.Background(modalBg).Render("Enter") +
-			StyleHelpDesc.Background(modalBg).Render(" create   ") +
-			StyleHelpKey.Background(modalBg).Render("Esc") +
-			StyleHelpDesc.Background(modalBg).Render(" back"))
+		b.WriteString(lipgloss.NewStyle().Foreground(dim).Background(modalBg).
+			Render("  Enter  create   Esc  back"))
 	}
 
-	box := StyleModalBorder.Width(boxWidth).Render(b.String())
+	b.WriteString("\n")
+
+	box := lipgloss.NewStyle().
+		Border(sharpBorder).
+		BorderForeground(border).
+		Background(modalBg).
+		Width(boxWidth).
+		Padding(0, 1).
+		Render(b.String())
+
 	return lipgloss.Place(w.width, w.height, lipgloss.Center, lipgloss.Center, box)
 }
+

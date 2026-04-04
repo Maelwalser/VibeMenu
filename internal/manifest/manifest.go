@@ -13,11 +13,16 @@ import (
 type RealizeOptions struct {
 	AppName      string            `json:"app_name"`
 	OutputDir    string            `json:"output_dir"`
-	Model        string            `json:"model"`
+	Model        string            `json:"model,omitempty"`           // kept for CLI backward compat
 	Concurrency  int               `json:"concurrency"`
 	Verify       bool              `json:"verify"`
 	DryRun       bool              `json:"dry_run"`
-	SectionModels map[string]string `json:"section_models,omitempty"` // per-pillar model override
+	SectionModels map[string]string `json:"section_models,omitempty"` // kept for backward compat
+	// Provider and tier model assignments (set via the Realize tab UI).
+	Provider   string `json:"provider,omitempty"`    // provider label (e.g. "Claude", "Gemini")
+	TierFast   string `json:"tier_fast,omitempty"`   // model ID for low-complexity tasks
+	TierMedium string `json:"tier_medium,omitempty"` // model ID for medium-complexity tasks
+	TierSlow   string `json:"tier_slow,omitempty"`   // model ID for high-complexity / escalation
 }
 
 // ── Provider assignments ──────────────────────────────────────────────────────

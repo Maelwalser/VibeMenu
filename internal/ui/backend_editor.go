@@ -675,6 +675,7 @@ func (be BackendEditor) ToManifest() manifest.BackendPillar {
 			RateLimitStrategy: fieldGet(be.securityFields, "rate_limit_strategy"),
 			RateLimitBackend:  fieldGet(be.securityFields, "rate_limit_backend"),
 			DDoSProtection:    fieldGet(be.securityFields, "ddos_protection"),
+			InternalMTLS:      fieldGet(be.securityFields, "internal_mtls") == "Enabled",
 		}
 	}
 
@@ -872,6 +873,11 @@ func (be BackendEditor) FromBackendPillar(bp manifest.BackendPillar) BackendEdit
 		be.securityFields = setFieldValue(be.securityFields, "rate_limit_strategy", bp.WAF.RateLimitStrategy)
 		be.securityFields = setFieldValue(be.securityFields, "rate_limit_backend", bp.WAF.RateLimitBackend)
 		be.securityFields = setFieldValue(be.securityFields, "ddos_protection", bp.WAF.DDoSProtection)
+		mtlsVal := "Disabled"
+		if bp.WAF.InternalMTLS {
+			mtlsVal = "Enabled"
+		}
+		be.securityFields = setFieldValue(be.securityFields, "internal_mtls", mtlsVal)
 	}
 
 	// Messaging fields.

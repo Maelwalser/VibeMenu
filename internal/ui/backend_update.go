@@ -8,6 +8,7 @@ func (be BackendEditor) updateDropdown(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 	opts := be.dropdownOptions()
 	isMulti := be.isMultiSelectDropdown()
 	be.dd.OptIdx = NavigateDropdown(key.String(), be.dd.OptIdx, len(opts))
+	ddJustClosed := false
 	switch key.String() {
 	case " ":
 		if isMulti {
@@ -16,6 +17,7 @@ func (be BackendEditor) updateDropdown(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		} else {
 			custom := be.applyDropdown()
 			be.dd.Open = false
+			ddJustClosed = true
 			if custom {
 				return be.tryEnterInsert()
 			}
@@ -26,6 +28,7 @@ func (be BackendEditor) updateDropdown(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		} else {
 			custom := be.applyDropdown()
 			be.dd.Open = false
+			ddJustClosed = true
 			if custom {
 				return be.tryEnterInsert()
 			}
@@ -35,6 +38,7 @@ func (be BackendEditor) updateDropdown(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 			be.saveMultiSelectCursor()
 		}
 		be.dd.Open = false
+		ddJustClosed = true
 	}
 	// Auto-save the active form so changes persist without requiring b/esc.
 	if be.serviceEditor.itemView == beListViewForm {
@@ -50,10 +54,20 @@ func (be BackendEditor) updateDropdown(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 	} else if be.authSubView == beAuthViewPermForm {
 		be.saveAuthPermForm()
 	}
-	// If strategy changed and the cursor now sits on a hidden auth field, advance it.
-	if be.authSubView == beAuthViewConfig && be.activeField < len(be.AuthFields) &&
-		be.isAuthFieldHidden(be.AuthFields[be.activeField].Key) {
-		be.activeField = be.nextAuthFieldIdx(+1)
+	// Only advance past hidden fields when the dropdown closes, not during j/k navigation.
+	// Running these checks on every key (including j/k) causes activeField to jump to a
+	// different field while the dropdown is still open, making it appear to switch menus.
+	if ddJustClosed {
+		// If strategy changed and the cursor now sits on a hidden auth field, advance it.
+		if be.authSubView == beAuthViewConfig && be.activeField < len(be.AuthFields) &&
+			be.isAuthFieldHidden(be.AuthFields[be.activeField].Key) {
+			be.activeField = be.nextAuthFieldIdx(+1)
+		}
+		// If strategy changed and the cursor now sits on a hidden security field, advance it.
+		if be.secEnabled && be.activeTab() == beTabSecurity && be.activeField < len(be.securityFields) &&
+			be.isSecurityFieldHidden(be.securityFields[be.activeField].Key) {
+			be.activeField = be.nextSecurityFieldIdx(+1)
+		}
 	}
 	return be, nil
 }

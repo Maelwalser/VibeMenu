@@ -121,6 +121,7 @@ type WAFConfig struct {
 	RateLimitStrategy string `json:"rate_limit_strategy,omitempty"`
 	RateLimitBackend  string `json:"rate_limit_backend,omitempty"`
 	DDoSProtection    string `json:"ddos_protection,omitempty"`
+	InternalMTLS      bool   `json:"internal_mtls,omitempty"`
 }
 
 // CronJobDef describes a scheduled/cron job.

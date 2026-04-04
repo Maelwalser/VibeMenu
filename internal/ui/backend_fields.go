@@ -756,8 +756,8 @@ func defaultSecurityFields() []Field {
 	return []Field{
 		{
 			Key: "waf_provider", Label: "waf_provider  ", Kind: KindSelect,
-			Options: []string{"Cloudflare WAF", "AWS WAF", "ModSecurity", "NGINX ModSec", "None"},
-			Value:   "None", SelIdx: 4,
+			Options: []string{"Cloudflare WAF", "AWS WAF", "Cloud Armor", "Azure WAF", "ModSecurity", "NGINX ModSec", "None"},
+			Value:   "None", SelIdx: 6,
 		},
 		{
 			Key: "waf_ruleset", Label: "waf_ruleset   ", Kind: KindSelect,
@@ -776,8 +776,8 @@ func defaultSecurityFields() []Field {
 		},
 		{
 			Key: "rate_limit_strategy", Label: "rate_limit    ", Kind: KindSelect,
-			Options: []string{"Token bucket (Redis)", "Sliding window", "Fixed window", "Leaky bucket", "None"},
-			Value:   "None", SelIdx: 4,
+			Options: []string{"Token bucket (Redis)", "Sliding window", "Fixed window", "Leaky bucket", "API Gateway", "None"},
+			Value:   "None", SelIdx: 5,
 		},
 		{
 			Key: "rate_limit_backend", Label: "rl_backend    ", Kind: KindSelect,
@@ -788,6 +788,11 @@ func defaultSecurityFields() []Field {
 			Key: "ddos_protection", Label: "ddos_protect  ", Kind: KindSelect,
 			Options: []string{"CDN-level (Cloudflare)", "Provider-managed", "None"},
 			Value:   "None", SelIdx: 2,
+		},
+		{
+			Key: "internal_mtls", Label: "internal_mtls ", Kind: KindSelect,
+			Options: []string{"Enabled", "Disabled"},
+			Value:   "Disabled", SelIdx: 1,
 		},
 	}
 }

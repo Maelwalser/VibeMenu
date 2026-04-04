@@ -276,6 +276,8 @@ func (be *BackendEditor) applyDropdown() bool {
 			case "orchestrator":
 				be.updateServiceDiscoveryOptions()
 			}
+		} else if be.activeTab() == beTabAPIGW && f.Key == "environment" {
+			be.updateAPIGWTechOptions()
 		}
 	}
 	return applyTo(be.mutableFieldPtr())
@@ -586,6 +588,8 @@ func (be BackendEditor) updateNormal(msg tea.Msg) (BackendEditor, tea.Cmd) {
 				case "orchestrator":
 					be.updateServiceDiscoveryOptions()
 				}
+			} else if be.activeTab() == beTabAPIGW && f.Key == "environment" {
+				be.updateAPIGWTechOptions()
 			}
 		}
 	case "i", "a":

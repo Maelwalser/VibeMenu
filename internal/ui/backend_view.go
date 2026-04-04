@@ -384,8 +384,23 @@ func (be BackendEditor) viewSubTabs(w, h int) string {
 		lines = append(lines, jobLines...)
 	case beTabSecurity:
 		if be.secEnabled {
-			fl := renderFormFields(w, be.securityFields, be.activeField, be.internalMode == ModeInsert, be.formInput, be.dd.Open, be.dd.OptIdx)
-			lines = append(lines, appendViewport(fl, 0, be.activeField, h-beOuterH)...)
+			var visibleSecFields []Field
+			skippedBefore := 0
+			for i, f := range be.securityFields {
+				if be.isSecurityFieldHidden(f.Key) {
+					if i < be.activeField {
+						skippedBefore++
+					}
+					continue
+				}
+				visibleSecFields = append(visibleSecFields, f)
+			}
+			filteredSecIdx := be.activeField - skippedBefore
+			if filteredSecIdx < 0 {
+				filteredSecIdx = 0
+			}
+			fl := renderFormFields(w, visibleSecFields, filteredSecIdx, be.internalMode == ModeInsert, be.formInput, be.dd.Open, be.dd.OptIdx)
+			lines = append(lines, appendViewport(fl, 0, filteredSecIdx, h-beOuterH)...)
 		} else {
 			lines = append(lines, StyleSectionDesc.Render("  (not configured — press 'a' to configure)"))
 		}

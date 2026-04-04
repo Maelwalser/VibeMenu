@@ -750,6 +750,95 @@ func (be BackendEditor) viewAuth(w int) []string {
 	return nil
 }
 
+// ── Security helpers ──────────────────────────────────────────────────────────
+
+// isSecurityFieldHidden returns true when a security config field should be
+// hidden given the currently selected architecture or prior security choices.
+func (be BackendEditor) isSecurityFieldHidden(key string) bool {
+	arch := be.currentArch()
+	switch key {
+	case "rate_limit_backend":
+		// Hide backend selector when strategy is "None" or delegated to API Gateway.
+		strategy := fieldGet(be.securityFields, "rate_limit_strategy")
+		return strategy == "None" || strategy == "API Gateway"
+	case "internal_mtls":
+		// mTLS between services is irrelevant for a pure monolith (all in-process).
+		return arch == string(manifest.ArchMonolith)
+	}
+	return false
+}
+
+// nextSecurityFieldIdx advances activeField by delta, skipping hidden fields.
+func (be BackendEditor) nextSecurityFieldIdx(delta int) int {
+	n := len(be.securityFields)
+	if n == 0 {
+		return 0
+	}
+	idx := be.activeField
+	for i := 0; i < n; i++ {
+		idx = (idx + delta + n) % n
+		if !be.isSecurityFieldHidden(be.securityFields[idx].Key) {
+			return idx
+		}
+	}
+	return be.activeField
+}
+
+// refreshSecurityOptions recomputes field options to ensure architectural and
+// cloud-provider compatibility. Call before cycling or opening any security dropdown.
+func (be *BackendEditor) refreshSecurityOptions() {
+	arch := be.currentArch()
+	cloud := be.cloudProvider
+
+	for i := range be.securityFields {
+		f := &be.securityFields[i]
+		switch f.Key {
+		case "rate_limit_strategy":
+			var opts []string
+			switch arch {
+			case string(manifest.ArchMicroservices), string(manifest.ArchEventDriven):
+				// In-memory is invalid: state isn't shared across instances.
+				opts = []string{"Token bucket (Redis)", "Sliding window", "Fixed window", "Leaky bucket", "API Gateway", "None"}
+			case string(manifest.ArchMonolith):
+				// Monoliths can safely use in-memory.
+				opts = []string{"Token bucket (in-memory)", "Token bucket (Redis)", "Sliding window", "Fixed window", "Leaky bucket", "None"}
+			default:
+				opts = []string{"Token bucket (Redis)", "Sliding window", "Fixed window", "Leaky bucket", "API Gateway", "None"}
+			}
+			ensureSecuritySelection(f, opts)
+
+		case "waf_provider":
+			var opts []string
+			switch cloud {
+			case "AWS":
+				opts = []string{"AWS WAF", "Cloudflare WAF", "ModSecurity", "NGINX ModSec", "None"}
+			case "GCP":
+				opts = []string{"Cloud Armor", "Cloudflare WAF", "ModSecurity", "NGINX ModSec", "None"}
+			case "Azure":
+				opts = []string{"Azure WAF", "Cloudflare WAF", "ModSecurity", "NGINX ModSec", "None"}
+			default:
+				opts = []string{"Cloudflare WAF", "AWS WAF", "Cloud Armor", "Azure WAF", "ModSecurity", "NGINX ModSec", "None"}
+			}
+			ensureSecuritySelection(f, opts)
+		}
+	}
+}
+
+// ensureSecuritySelection updates a field's options and reconciles SelIdx/Value.
+// When the current value is no longer in the new option set, it resets to the
+// first option (rather than "None") to avoid silently losing valid configuration.
+func ensureSecuritySelection(f *Field, opts []string) {
+	f.Options = opts
+	for j, o := range opts {
+		if o == f.Value {
+			f.SelIdx = j
+			return
+		}
+	}
+	f.SelIdx = 0
+	f.Value = opts[0]
+}
+
 // ── Security updates ──────────────────────────────────────────────────────────
 
 func (be BackendEditor) updateSecurity(key tea.KeyMsg) (BackendEditor, tea.Cmd) {
@@ -776,8 +865,6 @@ func (be BackendEditor) updateSecurity(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		}
 		return be, nil
 	}
-	// Security uses generic field navigation via currentEditableFields / mutableFieldPtr
-	// which already handles beTabSecurity. Just fall through to normal key handling.
 	n := len(be.securityFields)
 
 	// Vim count prefix
@@ -798,18 +885,14 @@ func (be BackendEditor) updateSecurity(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		be.countBuf = ""
 		be.gBuf = false
 		for i := 0; i < count; i++ {
-			if be.activeField < n-1 {
-				be.activeField++
-			}
+			be.activeField = be.nextSecurityFieldIdx(+1)
 		}
 	case "k", "up":
 		count := parseVimCount(be.countBuf)
 		be.countBuf = ""
 		be.gBuf = false
 		for i := 0; i < count; i++ {
-			if be.activeField > 0 {
-				be.activeField--
-			}
+			be.activeField = be.nextSecurityFieldIdx(-1)
 		}
 	case "g":
 		if be.gBuf {
@@ -822,7 +905,11 @@ func (be BackendEditor) updateSecurity(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 	case "G":
 		be.countBuf = ""
 		be.gBuf = false
+		// Jump to last visible field, skipping any trailing hidden fields.
 		be.activeField = n - 1
+		if n > 0 && be.isSecurityFieldHidden(be.securityFields[be.activeField].Key) {
+			be.activeField = be.nextSecurityFieldIdx(-1)
+		}
 	case "h", "left":
 		be.countBuf = ""
 		be.gBuf = false
@@ -849,23 +936,10 @@ func (be BackendEditor) updateSecurity(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		if be.activeField < n {
 			f := &be.securityFields[be.activeField]
 			if f.Kind == KindSelect {
-				// Refresh options for cache-dependent fields just before opening.
+				be.refreshSecurityOptions()
 				if f.Key == "rate_limit_backend" {
 					opts := be.rateBackendOptions()
-					f.Options = opts
-					// Reconcile SelIdx: keep if still valid, else reset to "None".
-					found := false
-					for j, o := range opts {
-						if o == f.Value {
-							f.SelIdx = j
-							found = true
-							break
-						}
-					}
-					if !found {
-						f.SelIdx = len(opts) - 1
-						f.Value = opts[len(opts)-1]
-					}
+					ensureSecuritySelection(f, opts)
 				}
 				be.dd.Open = true
 				be.dd.OptIdx = f.SelIdx
@@ -877,15 +951,16 @@ func (be BackendEditor) updateSecurity(key tea.KeyMsg) (BackendEditor, tea.Cmd) 
 		if be.activeField < n {
 			f := &be.securityFields[be.activeField]
 			if f.Kind == KindSelect {
+				be.refreshSecurityOptions()
 				if f.Key == "rate_limit_backend" {
 					opts := be.rateBackendOptions()
-					if len(f.Options) != len(opts) {
-						f.Options = opts
-						f.SelIdx = len(opts) - 1
-						f.Value = opts[f.SelIdx]
-					}
+					ensureSecuritySelection(f, opts)
 				}
 				f.CyclePrev()
+				// After cycling rate_limit_strategy, refresh dependent fields.
+				if f.Key == "rate_limit_strategy" {
+					be.refreshSecurityOptions()
+				}
 			}
 		}
 	case "D":

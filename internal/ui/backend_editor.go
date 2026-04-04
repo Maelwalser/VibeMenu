@@ -838,6 +838,12 @@ func (be BackendEditor) Orchestrator() string {
 	return be.orchestrator
 }
 
+// WAFRateLimitStrategy returns the configured WAF rate-limit strategy so that
+// the Contracts editor can set a sensible default for endpoint rate_limit.
+func (be BackendEditor) WAFRateLimitStrategy() string {
+	return fieldGet(be.securityFields, "rate_limit_strategy")
+}
+
 // AuthRoleOptions returns role names for use in frontend page forms.
 // Returns only explicitly configured roles; empty slice means none configured.
 func (be BackendEditor) AuthRoleOptions() []string {

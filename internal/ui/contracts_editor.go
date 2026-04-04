@@ -74,11 +74,12 @@ type ContractsEditor struct {
 	extIntFormIdx int
 
 	// Cross-editor reference data (set by model.go before each Update)
-	availableDomains     []string               // from DataTabEditor.domainNames()
-	availableDomainDefs  []manifest.DomainDef   // from DataTabEditor.domains
-	availableServices    []string               // from BackendEditor.ServiceNames()
-	availableServiceDefs []manifest.ServiceDef  // from BackendEditor.ServiceDefs()
-	availableAuthRoles   []string               // from BackendEditor.AuthRoleOptions()
+	availableDomains       []string               // from DataTabEditor.domainNames()
+	availableDomainDefs    []manifest.DomainDef   // from DataTabEditor.domains
+	availableServices      []string               // from BackendEditor.ServiceNames()
+	availableServiceDefs   []manifest.ServiceDef  // from BackendEditor.ServiceDefs()
+	availableAuthRoles     []string               // from BackendEditor.AuthRoleOptions()
+	wafRateLimitStrategy   string                 // from BackendEditor.WAFRateLimitStrategy()
 
 	// Dropdown state for KindSelect/KindMultiSelect fields
 	dd DropdownState
@@ -114,6 +115,12 @@ func (ce *ContractsEditor) SetServiceDefs(defs []manifest.ServiceDef) {
 // SetAuthRoles updates the auth role options used in endpoint forms.
 func (ce *ContractsEditor) SetAuthRoles(roles []string) {
 	ce.availableAuthRoles = roles
+}
+
+// SetWAFRateLimitStrategy updates the backend WAF rate-limit strategy so that
+// new endpoint forms can default rate_limit appropriately.
+func (ce *ContractsEditor) SetWAFRateLimitStrategy(strategy string) {
+	ce.wafRateLimitStrategy = strategy
 }
 
 // protocolsForService returns the protocol options valid for the named service

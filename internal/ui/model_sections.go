@@ -86,6 +86,7 @@ func buildSectionRegistry() map[string]sectionEntry {
 				m.contractsEditor.SetServices(m.backendEditor.ServiceNames())
 				m.contractsEditor.SetServiceDefs(m.backendEditor.ServiceDefs())
 				m.contractsEditor.SetAuthRoles(m.backendEditor.AuthRoleOptions())
+				m.contractsEditor.SetWAFRateLimitStrategy(m.backendEditor.WAFRateLimitStrategy())
 				var cmd tea.Cmd
 				m.contractsEditor, cmd = m.contractsEditor.Update(msg)
 				return cmd

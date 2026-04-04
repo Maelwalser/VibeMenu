@@ -201,6 +201,59 @@ func (dt *DataTabEditor) SetServiceNames(names []string) {
 	dt.serviceNames = names
 }
 
+// fsStorageByProvider maps infra cloud_provider → valid file storage technologies.
+var fsStorageByProvider = map[string][]string{
+	"AWS":         {"S3", "MinIO", "Local disk"},
+	"GCP":         {"GCS", "MinIO", "Local disk"},
+	"Azure":       {"Azure Blob", "MinIO", "Local disk"},
+	"Cloudflare":  {"Cloudflare R2", "S3", "Local disk"},
+	"Hetzner":     {"MinIO", "S3", "Local disk"},
+	"Self-hosted": {"MinIO", "Local disk"},
+}
+
+// fsStorageOptionsFor returns the technology options for the given cloud provider,
+// falling back to all options when the provider is unset or unrecognised.
+func fsStorageOptionsFor(provider string) []string {
+	if opts, ok := fsStorageByProvider[provider]; ok {
+		return opts
+	}
+	return []string{"S3", "GCS", "Azure Blob", "MinIO", "Cloudflare R2", "Local disk"}
+}
+
+// SetCloudProvider updates the infra cloud provider and narrows the technology
+// options in the active FS form (if open) and any re-opened forms thereafter.
+func (dt *DataTabEditor) SetCloudProvider(provider string) {
+	if dt.cloudProvider == provider {
+		return
+	}
+	dt.cloudProvider = provider
+	if len(dt.fsForm) == 0 {
+		return
+	}
+	newOpts := fsStorageOptionsFor(provider)
+	for i := range dt.fsForm {
+		if dt.fsForm[i].Key != "technology" {
+			continue
+		}
+		current := dt.fsForm[i].DisplayValue()
+		dt.fsForm[i].Options = newOpts
+		found := false
+		for j, opt := range newOpts {
+			if opt == current {
+				dt.fsForm[i].SelIdx = j
+				dt.fsForm[i].Value = opt
+				found = true
+				break
+			}
+		}
+		if !found {
+			dt.fsForm[i].SelIdx = 0
+			dt.fsForm[i].Value = newOpts[0]
+		}
+		break
+	}
+}
+
 // SetMigrationContext updates the backend languages used to filter migration tool
 // options. Recomputes the governance field options immediately, preserving the
 // current selection when it remains valid.
@@ -468,12 +521,13 @@ func (dt DataTabEditor) withRefreshedCachingStrategies() DataTabEditor {
 	return dt
 }
 
-func defaultFSFormFields(serviceOptions, domainOptions []string) []Field {
+func defaultFSFormFields(serviceOptions, domainOptions []string, cloudProvider string) []Field {
+	techOpts := fsStorageOptionsFor(cloudProvider)
 	return []Field{
 		{
 			Key: "technology", Label: "technology    ", Kind: KindSelect,
-			Options: []string{"S3", "GCS", "Azure Blob", "MinIO", "Cloudflare R2", "Local disk"},
-			Value:   "S3",
+			Options: techOpts,
+			Value:   techOpts[0],
 		},
 		{Key: "purpose", Label: "purpose       ", Kind: KindText},
 		{
@@ -508,8 +562,8 @@ func defaultFSFormFields(serviceOptions, domainOptions []string) []Field {
 	}
 }
 
-func fsFormFromDef(def manifest.FileStorageDef, serviceOptions, domainOptions []string) []Field {
-	f := defaultFSFormFields(serviceOptions, domainOptions)
+func fsFormFromDef(def manifest.FileStorageDef, serviceOptions, domainOptions []string, cloudProvider string) []Field {
+	f := defaultFSFormFields(serviceOptions, domainOptions, cloudProvider)
 	f = setFieldValue(f, "technology", def.Technology)
 	f = setFieldValue(f, "purpose", def.Purpose)
 	f = setFieldValue(f, "service", def.Service)

@@ -268,7 +268,8 @@ func (be *BackendEditor) applyDropdown() bool {
 	if f := be.mutableFieldPtr(); f != nil && f.Kind == KindSelect && be.dd.OptIdx < len(f.Options) {
 		f.SelIdx = be.dd.OptIdx
 		f.Value = f.Options[be.dd.OptIdx]
-		if be.activeTab() == beTabEnv {
+		switch be.activeTab() {
+		case beTabEnv:
 			switch f.Key {
 			case "monolith_lang":
 				be.updateEnvMonolithOptions()
@@ -279,10 +280,18 @@ func (be *BackendEditor) applyDropdown() bool {
 			case "orchestrator":
 				be.updateServiceDiscoveryOptions()
 			}
-		} else if be.activeTab() == beTabAPIGW && f.Key == "environment" {
-			be.updateAPIGWTechOptions()
-		} else if be.activeTab() == beTabAuth && be.authSubView == beAuthViewConfig && f.Key == "provider" {
-			be.updateAuthMFAOptions()
+		case beTabAPIGW:
+			if f.Key == "environment" {
+				be.updateAPIGWTechOptions()
+			}
+		case beTabAuth:
+			if be.authSubView == beAuthViewConfig && f.Key == "provider" {
+				be.updateAuthMFAOptions()
+			}
+		case beTabMessaging:
+			if f.Key == "broker_tech" {
+				be.refreshMessagingDeploymentOptions()
+			}
 		}
 	}
 	return applyTo(be.mutableFieldPtr())

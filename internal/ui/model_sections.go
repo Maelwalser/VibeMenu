@@ -60,6 +60,7 @@ func buildSectionRegistry() map[string]sectionEntry {
 				m.backendEditor.SetEnvironmentNames(m.infraEditor.EnvironmentNames())
 				m.backendEditor.SetEnvironmentDefs(m.infraEditor.EnvironmentDefs())
 				m.backendEditor.SetOrchestrator(m.infraEditor.PrimaryOrchestrator())
+				m.backendEditor.SetMessagingCloudProvider(m.infraEditor.PrimaryCloudProvider())
 				var cmd tea.Cmd
 				m.backendEditor, cmd = m.backendEditor.Update(msg)
 				return cmd
@@ -117,6 +118,7 @@ func buildSectionRegistry() map[string]sectionEntry {
 				m.backendEditor.SetEnvironmentNames(m.infraEditor.EnvironmentNames())
 				m.backendEditor.SetEnvironmentDefs(m.infraEditor.EnvironmentDefs())
 				m.backendEditor.SetOrchestrator(m.infraEditor.PrimaryOrchestrator())
+				m.backendEditor.SetMessagingCloudProvider(m.infraEditor.PrimaryCloudProvider())
 				m.dataTabEditor.SetEnvironmentNames(m.infraEditor.EnvironmentNames())
 				m.dataTabEditor.SetCloudProvider(m.infraEditor.PrimaryCloudProvider())
 				return cmd

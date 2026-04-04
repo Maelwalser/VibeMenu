@@ -198,9 +198,10 @@ type BackendEditor struct {
 	cacheAliases       []string // IsCache DB aliases from the Data pillar
 	dbSourceAliases    []string // All DB source aliases from the Data pillar (for health_deps)
 	dtoProtocols       []string // unique DTO serialisation protocols from ContractsEditor
-	environmentNames   []string                      // InfraPillar environment names for service env dropdowns
+	environmentNames   []string                        // InfraPillar environment names for service env dropdowns
 	environmentDefs    []manifest.ServerEnvironmentDef // InfraPillar full env defs for API GW tech filtering
 	orchestrator       string                          // Primary orchestrator from InfraPillar for service discovery
+	cloudProvider      string                          // Primary cloud provider from InfraPillar for messaging deployment options
 
 	// Vim motion state
 	countBuf string
@@ -537,6 +538,16 @@ func (be *BackendEditor) updateAPIGWTechOptions() {
 		}
 		break
 	}
+}
+
+// SetMessagingCloudProvider injects the primary cloud provider from infra so
+// that the messaging deployment dropdown shows cloud-specific managed options.
+func (be *BackendEditor) SetMessagingCloudProvider(cp string) {
+	if be.cloudProvider == cp {
+		return
+	}
+	be.cloudProvider = cp
+	be.refreshMessagingDeploymentOptions()
 }
 
 // SetOrchestrator injects the primary orchestrator from infra for narrowing

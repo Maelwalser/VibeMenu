@@ -2,6 +2,62 @@ package ui
 
 import "strings"
 
+// ── SEO render strategy options per meta-framework ───────────────────────────
+
+var seoRenderByMetaFramework = map[string][]string{
+	"Next.js":   {"SSR", "SSG", "ISR", "Prerender", "None"},
+	"Nuxt":      {"SSR", "SSG", "ISR", "None"},
+	"SvelteKit": {"SSR", "SSG", "Prerender", "None"},
+	"Remix":     {"SSR", "None"},
+	"Astro":     {"SSG", "SSR", "None"},
+	"None":      {"Prerender", "None"},
+}
+
+// seoRenderOptions returns the valid seo_render_strategy options given the
+// current platform and meta-framework selections.
+// Mobile and Desktop platforms do not support server rendering strategies.
+func seoRenderOptions(platform, metaFramework string) []string {
+	lower := strings.ToLower(platform)
+	if strings.Contains(lower, "mobile") || strings.Contains(lower, "desktop") {
+		return []string{"None"}
+	}
+	if opts, ok := seoRenderByMetaFramework[metaFramework]; ok {
+		return opts
+	}
+	// Web platform with unrecognised meta-framework: omit ISR (Next.js-only)
+	return []string{"SSR", "SSG", "Prerender", "None"}
+}
+
+// refreshSEORenderOptions rebuilds the Options (and clamps SelIdx/Value) for the
+// seo_render_strategy field inside the supplied a11y field slice.
+func refreshSEORenderOptions(fields []Field, platform, metaFramework string) []Field {
+	opts := seoRenderOptions(platform, metaFramework)
+	updated := make([]Field, len(fields))
+	copy(updated, fields)
+	for i, f := range updated {
+		if f.Key != "seo_render_strategy" {
+			continue
+		}
+		f.Options = opts
+		// Keep current value if still valid; otherwise fall back to last option.
+		found := false
+		for j, o := range opts {
+			if o == f.Value {
+				f.SelIdx = j
+				found = true
+				break
+			}
+		}
+		if !found {
+			f.SelIdx = len(opts) - 1
+			f.Value = opts[len(opts)-1]
+		}
+		updated[i] = f
+		break
+	}
+	return updated
+}
+
 // ── framework options per language/platform ───────────────────────────────────
 
 var frontendFrameworksByLang = map[string][]string{

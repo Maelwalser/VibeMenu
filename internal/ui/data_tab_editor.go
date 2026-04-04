@@ -106,6 +106,8 @@ type DataTabEditor struct {
 	serviceNames []string
 	// Context from infra — used to filter file storage technology options.
 	cloudProvider string
+	// Context from infra — used to populate the environment selector in FS forms.
+	environmentNames []string
 	// Context from contracts — used to populate entities multiselect in caching forms.
 	availableDTOs []string
 

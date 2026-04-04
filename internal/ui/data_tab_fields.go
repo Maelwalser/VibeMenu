@@ -297,9 +297,38 @@ func (dt *DataTabEditor) SetDTONames(names []string) {
 }
 
 // SetEnvironmentNames injects environment names from the infra tab so that
-// database forms show an environment selector dropdown.
+// database forms and file storage forms show an environment selector dropdown.
 func (dt *DataTabEditor) SetEnvironmentNames(names []string) {
 	dt.dbEditor.SetEnvironmentNames(names)
+	if stringSlicesEqual(dt.environmentNames, names) {
+		return
+	}
+	dt.environmentNames = names
+	if len(dt.fsForm) == 0 {
+		return
+	}
+	opts, defaultVal := noneOrPlaceholder(names, "(no environments configured)")
+	for i := range dt.fsForm {
+		if dt.fsForm[i].Key != "environment" {
+			continue
+		}
+		current := dt.fsForm[i].DisplayValue()
+		dt.fsForm[i].Options = opts
+		found := false
+		for j, opt := range opts {
+			if opt == current {
+				dt.fsForm[i].SelIdx = j
+				dt.fsForm[i].Value = opt
+				found = true
+				break
+			}
+		}
+		if !found {
+			dt.fsForm[i].SelIdx = 0
+			dt.fsForm[i].Value = defaultVal
+		}
+		break
+	}
 }
 
 func defaultGovernanceFields() []Field {
@@ -521,8 +550,9 @@ func (dt DataTabEditor) withRefreshedCachingStrategies() DataTabEditor {
 	return dt
 }
 
-func defaultFSFormFields(serviceOptions, domainOptions []string, cloudProvider string) []Field {
+func defaultFSFormFields(domainOptions []string, cloudProvider string, environmentNames []string) []Field {
 	techOpts := fsStorageOptionsFor(cloudProvider)
+	envOpts, envDefault := noneOrPlaceholder(environmentNames, "(no environments configured)")
 	return []Field{
 		{
 			Key: "technology", Label: "technology    ", Kind: KindSelect,
@@ -531,9 +561,9 @@ func defaultFSFormFields(serviceOptions, domainOptions []string, cloudProvider s
 		},
 		{Key: "purpose", Label: "purpose       ", Kind: KindText},
 		{
-			Key: "service", Label: "service       ", Kind: KindSelect,
-			Options: serviceOptions,
-			Value:   placeholderFor(serviceOptions, "(no services configured)"),
+			Key: "environment", Label: "environment   ", Kind: KindSelect,
+			Options: envOpts,
+			Value:   envDefault,
 		},
 		{
 			Key: "access", Label: "access        ", Kind: KindSelect,
@@ -562,11 +592,11 @@ func defaultFSFormFields(serviceOptions, domainOptions []string, cloudProvider s
 	}
 }
 
-func fsFormFromDef(def manifest.FileStorageDef, serviceOptions, domainOptions []string, cloudProvider string) []Field {
-	f := defaultFSFormFields(serviceOptions, domainOptions, cloudProvider)
+func fsFormFromDef(def manifest.FileStorageDef, domainOptions []string, cloudProvider string, environmentNames []string) []Field {
+	f := defaultFSFormFields(domainOptions, cloudProvider, environmentNames)
 	f = setFieldValue(f, "technology", def.Technology)
 	f = setFieldValue(f, "purpose", def.Purpose)
-	f = setFieldValue(f, "service", def.Service)
+	f = setFieldValue(f, "environment", def.Environment)
 	if def.Access != "" {
 		f = setFieldValue(f, "access", def.Access)
 	}
@@ -595,7 +625,7 @@ func fsDefFromForm(fields []Field) manifest.FileStorageDef {
 	return manifest.FileStorageDef{
 		Technology:   fieldGet(fields, "technology"),
 		Purpose:      fieldGet(fields, "purpose"),
-		Service:      fieldGet(fields, "service"),
+		Environment:  fieldGet(fields, "environment"),
 		Access:       fieldGet(fields, "access"),
 		MaxSize:      fieldGet(fields, "max_size"),
 		Domains:      fieldGetMulti(fields, "domains"),

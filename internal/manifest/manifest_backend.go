@@ -26,8 +26,8 @@ type ServiceDef struct {
 	ErrorFormat      string             `json:"error_format,omitempty"`
 	ServiceDiscovery string             `json:"service_discovery,omitempty"`
 	Environment      string             `json:"environment,omitempty"`
-	Interfaces   []ExposedInterface `json:"interfaces,omitempty"`
-	Repositories []RepositoryDef    `json:"repositories,omitempty"`
+	Interfaces       []ExposedInterface `json:"interfaces,omitempty"`
+	Repositories     []RepositoryDef    `json:"repositories,omitempty"`
 }
 
 // ExposedInterface describes one interface a service unit exposes.

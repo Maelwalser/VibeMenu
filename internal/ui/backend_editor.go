@@ -105,7 +105,7 @@ const (
 type beRepoSubView int
 
 const (
-	beRepoSubViewNone  beRepoSubView = iota // not in repo editing
+	beRepoSubViewNone   beRepoSubView = iota // not in repo editing
 	beRepoSubViewList                        // listing repos for the current service
 	beRepoSubViewForm                        // editing a repo's basic fields
 	beRepoSubViewOpList                      // listing ops for the current repo

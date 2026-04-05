@@ -872,6 +872,40 @@ func fillTildes(lines []string, h int) string {
 //     width no cropping occurs and trailing spaces are stripped.
 //   - Vertical: no cropping — art renders top-to-bottom; rows beyond the art's
 //     line count leave the right panel empty (art need not fill the full height).
+// withDescriptionPanel lays out left content and a pre-styled description panel
+// side-by-side. Unlike withSidePanel it does NOT rune-slice or re-style the right
+// lines, so ANSI escape sequences in descLines are preserved intact.
+func withDescriptionPanel(left string, descLines []string, leftW, descW, h int) string {
+	leftLines := strings.Split(strings.TrimRight(left, "\n"), "\n")
+	sep := StyleArtSep.Render("│")
+
+	var sb strings.Builder
+	for i := 0; i < h; i++ {
+		var leftLine string
+		if i < len(leftLines) {
+			leftLine = leftLines[i]
+		}
+		lw := lipgloss.Width(leftLine)
+		if lw < leftW {
+			leftLine += strings.Repeat(" ", leftW-lw)
+		}
+
+		var rightLine string
+		if i < len(descLines) {
+			rightLine = descLines[i]
+		}
+
+		sb.WriteString(leftLine)
+		sb.WriteString(sep)
+		sb.WriteString(rightLine)
+		if i < h-1 {
+			sb.WriteString("\n")
+		}
+	}
+	sb.WriteString("\n")
+	return sb.String()
+}
+
 func withSidePanel(left string, artLines []string, leftW, artW, h int) string {
 	leftLines := strings.Split(strings.TrimRight(left, "\n"), "\n")
 	sep := StyleArtSep.Render("│")

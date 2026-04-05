@@ -1,8 +1,16 @@
-# VibeMenu
+  _     _   __     _____     _____  __    __    _____  __   __   __    __   
+ /_/\ /\_\ /\_\  /\  __/\  /\_____\/_/\  /\_\ /\_____\/_/\ /\_\ /\_\  /_/\  
+ ) ) ) ( ( \/_/  ) )(_ ) )( (_____/) ) \/ ( (( (_____/) ) \ ( (( ( (  ) ) ) 
+/_/ / \ \_\ /\_\/ / __/ /  \ \__\ /_/ \  / \_\\ \__\ /_/   \ \_\\ \ \/ / /  
+\ \ \_/ / // / /\ \  _\ \  / /__/_\ \ \\// / // /__/_\ \ \   / / \ \  / /   
+ \ \   / /( (_(  ) )(__) )( (_____\)_) )( (_(( (_____\)_) \ (_(  ( (__) )   
+  \_\_/_/  \/_/  \/____\/  \/_____/\_\/  \/_/ \/_____/\_\/ \/_/   \/__\/    
+                                                                            
+What vibe is on the menu today?
 
-An interactive Terminal User Interface (TUI) for declaratively specifying a complete software system architecture. Define your stack across 8 structured sections, then generate a `manifest.json` for downstream code generation via the `realize` pipeline.
+A TUI for declaratively specifying a complete software system architecture. Define your stack across 8 structured sections, then generate a `manifest.json` for downstream code generation via the `realize` pipeline.
 
-Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and a Tokyo Night dark theme throughout.
+(Still in development, may have issues; TODO Final task in flow needs fixing)
 
 ---
 
@@ -32,52 +40,6 @@ Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and a Tokyo 
 ---
 
 ## The TUI Editor
-
-VibeMenu uses vim-modal editing with three modes:
-
-| Mode | How to Enter | Description |
-|------|-------------|-------------|
-| **Normal** | `Esc` | Navigation between sections and fields |
-| **Insert** | `i` | Text input for the active field |
-| **Command** | `:` | Run editor commands (`:w`, `:q`, etc.) |
-
-### Key Bindings
-
-#### Global (Normal Mode)
-
-| Key | Action |
-|-----|--------|
-| `Tab` / `Shift+Tab` | Next / previous main section |
-| `j` / `k` | Move down / up within a section |
-| `Space` | Cycle through select field options |
-| `i` | Enter insert mode |
-| `:` | Enter command mode |
-| `Ctrl+S` | Save manifest |
-| `Shift+M` | Open Provider Menu modal |
-| `Ctrl+C` | Quit |
-
-#### Command Mode
-
-| Command | Action |
-|---------|--------|
-| `:w` / `:write` | Save manifest |
-| `:q` / `:quit` | Quit without saving |
-| `:wq` / `:x` | Save and quit |
-| `:tabn` / `:bn` | Next section |
-| `:tabp` / `:bp` | Previous section |
-| `:1` – `:8` | Jump directly to section N |
-
-#### List / Form Views
-
-| Key | Action |
-|-----|--------|
-| `a` | Add a new item |
-| `d` | Delete the selected item |
-| `Enter` / `i` | Edit selected item |
-| `h` / `l` | Switch sub-tabs |
-| `b` / `Esc` | Back to parent / exit insert mode |
-| `F` | Drill into nested fields (DTOs) |
-| `A` | Drill into attributes (Domains) |
 
 ### Sections Overview
 

@@ -156,14 +156,6 @@ func repoFieldsFromDef(r manifest.RepositoryDef) []Field {
 }
 
 func opDefFromFields(fields []Field) manifest.DataAccessOp {
-	params := fieldGet(fields, "parameters")
-	var paramSlice []string
-	for _, p := range strings.Split(params, ",") {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			paramSlice = append(paramSlice, p)
-		}
-	}
 	var filterBy []string
 	for _, f := range fields {
 		if f.Key == "filter_by" {

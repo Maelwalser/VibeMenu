@@ -148,15 +148,15 @@ func Load(path string) (*Manifest, error) {
 func (m Manifest) MarshalJSON() ([]byte, error) {
 	// shadow uses pointer pillar fields so encoding/json's omitempty works.
 	type shadow struct {
-		CreatedAt           time.Time           `json:"created_at"`
-		Description         string              `json:"description,omitempty"`
-		Data                *DataPillar         `json:"data,omitempty"`
-		Backend             *BackendPillar      `json:"backend,omitempty"`
-		Contracts           *ContractsPillar    `json:"contracts,omitempty"`
-		Frontend            *FrontendPillar     `json:"frontend,omitempty"`
-		Infrastructure      *InfraPillar        `json:"infrastructure,omitempty"`
-		CrossCutting        *CrossCutPillar     `json:"cross_cutting,omitempty"`
-		Realize *RealizeOptions `json:"realize,omitempty"`
+		CreatedAt      time.Time        `json:"created_at"`
+		Description    string           `json:"description,omitempty"`
+		Data           *DataPillar      `json:"data,omitempty"`
+		Backend        *BackendPillar   `json:"backend,omitempty"`
+		Contracts      *ContractsPillar `json:"contracts,omitempty"`
+		Frontend       *FrontendPillar  `json:"frontend,omitempty"`
+		Infrastructure *InfraPillar     `json:"infrastructure,omitempty"`
+		CrossCutting   *CrossCutPillar  `json:"cross_cutting,omitempty"`
+		Realize        *RealizeOptions  `json:"realize,omitempty"`
 		// Legacy fields retained for backward compatibility.
 		Databases []DBSourceDef    `json:"databases,omitempty"`
 		Entities  []EntityDef      `json:"entities,omitempty"`

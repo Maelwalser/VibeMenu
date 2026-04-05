@@ -516,14 +516,14 @@ func (m Model) execSave() (tea.Model, tea.Cmd) {
 func (m Model) BuildManifest() *manifest.Manifest {
 	dataPillar := m.dataTabEditor.ToManifestDataPillar()
 	return &manifest.Manifest{
-		Description:         m.descriptionEditor.Value(),
-		Data:                dataPillar,
-		Backend:             m.backendEditor.ToManifest(),
-		Contracts:           m.contractsEditor.ToManifestContractsPillar(),
-		Frontend:            m.frontendEditor.ToManifestFrontendPillar(),
-		Infra:               m.infraEditor.ToManifestInfraPillar(),
-		CrossCut:            m.crossCutEditor.ToManifestCrossCutPillar(),
-		Realize:             m.realizeEditor.ToManifestRealizeOptions(),
+		Description: m.descriptionEditor.Value(),
+		Data:        dataPillar,
+		Backend:     m.backendEditor.ToManifest(),
+		Contracts:   m.contractsEditor.ToManifestContractsPillar(),
+		Frontend:    m.frontendEditor.ToManifestFrontendPillar(),
+		Infra:       m.infraEditor.ToManifestInfraPillar(),
+		CrossCut:    m.crossCutEditor.ToManifestCrossCutPillar(),
+		Realize:     m.realizeEditor.ToManifestRealizeOptions(),
 		// Legacy flat fields for backward compatibility
 		Databases: dataPillar.Databases,
 		Entities:  dataPillar.Entities,

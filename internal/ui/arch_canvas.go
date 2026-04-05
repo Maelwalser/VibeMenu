@@ -99,11 +99,6 @@ func (c *canvas) arrowRight(x, y int) {
 	c.set(x, y, '▶')
 }
 
-// arrowLeft writes '◀' at (x, y).
-func (c *canvas) arrowLeft(x, y int) {
-	c.set(x, y, '◀')
-}
-
 // drawEnvBox draws a rounded-dashed environment container box.
 // Uses ╭╌╮╎╰╯ to visually distinguish from solid node boxes (┌─┐│└─┘).
 // The name is written left-aligned after the top-left corner.
@@ -190,4 +185,3 @@ func truncate(s string, maxRunes int) string {
 	}
 	return string(runes[:maxRunes-1]) + "…"
 }
-

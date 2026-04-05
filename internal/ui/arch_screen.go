@@ -15,7 +15,7 @@ import (
 type archNodeKind int
 
 const (
-	archFrontend    archNodeKind = iota
+	archFrontend archNodeKind = iota
 	archService
 	archDatabase
 	archExternalAPI

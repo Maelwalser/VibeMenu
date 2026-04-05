@@ -49,6 +49,9 @@ func (m Model) renderBaseView() string {
 	if m.realize.show {
 		return m.renderRealizeFullScreen()
 	}
+	if m.arch.show {
+		return m.renderArchFullScreen()
+	}
 	var b strings.Builder
 	w := m.width
 	b.WriteString(m.renderHeader(w))
@@ -70,6 +73,17 @@ func (m Model) renderRealizeFullScreen() string {
 	}
 	content := m.realize.screen.View(w, contentH)
 	hint := m.realize.screen.HintLine()
+	return content + "\n" + hint
+}
+
+func (m Model) renderArchFullScreen() string {
+	w, h := m.width, m.height
+	contentH := h - 1
+	if contentH < 1 {
+		contentH = 1
+	}
+	content := m.arch.screen.View(w, contentH)
+	hint := m.arch.screen.HintLine()
 	return content + "\n" + hint
 }
 
@@ -405,7 +419,7 @@ func (m Model) renderCmdLine(w int) string {
 	}
 
 	if lipgloss.Width(line) > w {
-		line = line[:w-1]
+		line = lipgloss.NewStyle().MaxWidth(w).Render(line)
 	}
 	return line
 }

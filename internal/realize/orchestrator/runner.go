@@ -139,6 +139,17 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 		r.log("[%s] go.mod locked from deps phase", r.task.ID)
 	}
 
+	// Augment the pre-computed deps context with the locked go.mod so the agent
+	// sees the exact resolved versions and does not invent its own. This prevents
+	// version drift between what go mod tidy resolved and what the agent writes.
+	effectiveDepsContext := r.depsContext
+	if lockedGoMod != "" {
+		effectiveDepsContext += "\n## LOCKED DEPENDENCIES — DO NOT OVERRIDE\n\n"
+		effectiveDepsContext += "The following go.mod was resolved by the package manager. "
+		effectiveDepsContext += "Do NOT generate go.mod or go.sum. Do NOT change any version.\n\n"
+		effectiveDepsContext += "```\n" + lockedGoMod + "\n```\n"
+	}
+
 	// Stage files from completed dependency tasks so go build can resolve
 	// cross-task packages (e.g. internal/domain from data.schemas is visible
 	// to svc.monolith.plan's verifier without burning a retry slot).
@@ -175,7 +186,7 @@ func (r *TaskRunner) Run(ctx context.Context) error {
 			PreviousErrors:       lastVerifyOutput,
 			DependencyOutputs:    r.memory.DepsOf(r.task),
 			AttemptNumber:        attempt,
-			DepsContext:          r.depsContext,
+			DepsContext:          effectiveDepsContext,
 			ExistingTypeRegistry: r.memory.TypeRegistry(),
 			AllConstructors:      r.memory.AllConstructors(),
 		}

@@ -162,6 +162,8 @@ func (m *SharedMemory) DepsOf(task *dag.Task) []*TaskOutput {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	budget := config.MaxTotalCharsFor(string(task.Kind))
+
 	var results []*TaskOutput
 	total := 0
 
@@ -170,7 +172,7 @@ func (m *SharedMemory) DepsOf(task *dag.Task) []*TaskOutput {
 		if !ok {
 			continue
 		}
-		if total >= config.MaxTotalChars {
+		if total >= budget {
 			break
 		}
 		// Shallow-copy the output, trimming files once the budget is reached.
@@ -180,11 +182,11 @@ func (m *SharedMemory) DepsOf(task *dag.Task) []*TaskOutput {
 			Kind:   out.Kind,
 		}
 		for _, f := range out.Files {
-			if total >= config.MaxTotalChars {
+			if total >= budget {
 				break
 			}
 			content := f.Content
-			remaining := config.MaxTotalChars - total
+			remaining := budget - total
 			if len(content) > remaining {
 				content = content[:remaining] + "\n// [truncated by shared memory budget]"
 			}

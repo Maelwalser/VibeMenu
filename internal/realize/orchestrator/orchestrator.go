@@ -244,14 +244,21 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	if intResult.Passed {
 		o.log("realize: integration build passed ✓ — all generated code compiles together")
 	} else {
-		o.log("realize: ⚠ integration build found cross-task errors:\n%s", intResult.Output)
-		o.log("realize: NOTE — the above errors were not caught by per-task verification because")
-		o.log("realize:       tasks are verified in isolation. Common causes:")
-		o.log("realize:       1. Wrong import paths — check that all internal imports use module path '%s'", modulePathFromOutput(o.cfg.OutputDir))
-		o.log("realize:       2. Duplicate type declarations — two tasks defined conflicting interfaces")
-		o.log("realize:       3. Function signature mismatch — caller ignores an error return value")
-		o.log("realize:       4. Constructor called with wrong argument count — check 'Critical Constructor Signatures'")
-		o.log("realize:       Run 'go build ./...' inside the backend directory to reproduce the errors.")
+		// Deterministic fixes did not resolve all errors. Attempt LLM-driven repair.
+		o.log("realize: attempting LLM repair of remaining integration errors...")
+		intResult = repairIntegrationErrors(ctx, o.cfg.OutputDir, intResult, defaultProvider, tierOverrides, o.cfg.Verbose)
+		if intResult.Passed {
+			o.log("realize: integration build passed ✓ after LLM repair")
+		} else {
+			o.log("realize: ⚠ integration build found cross-task errors:\n%s", intResult.Output)
+			o.log("realize: NOTE — the above errors were not caught by per-task verification because")
+			o.log("realize:       tasks are verified in isolation. Common causes:")
+			o.log("realize:       1. Wrong import paths — check that all internal imports use module path '%s'", modulePathFromOutput(o.cfg.OutputDir))
+			o.log("realize:       2. Duplicate type declarations — two tasks defined conflicting interfaces")
+			o.log("realize:       3. Function signature mismatch — caller ignores an error return value")
+			o.log("realize:       4. Constructor called with wrong argument count — check 'Critical Constructor Signatures'")
+			o.log("realize:       Run 'go build ./...' inside the backend directory to reproduce the errors.")
+		}
 	}
 
 	o.log("realize: complete — output written to %s", o.cfg.OutputDir)

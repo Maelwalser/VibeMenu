@@ -30,6 +30,11 @@ const (
 	TaskKindInfraCI         TaskKind = "infra.cicd"
 	TaskKindCrossCutTesting TaskKind = "crosscut.testing"
 	TaskKindCrossCutDocs    TaskKind = "crosscut.docs"
+
+	// TaskKindIntegrationRepair is a synthetic kind used exclusively by the
+	// post-pipeline integration repair phase. It never appears in the DAG; it
+	// provides a role-description hook and tier assignment for the LLM repair agent.
+	TaskKindIntegrationRepair TaskKind = "integration.repair"
 )
 
 // GeneratedFile is one file produced by an agent for a task.

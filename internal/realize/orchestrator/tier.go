@@ -53,6 +53,10 @@ var defaultTierForKind = map[dag.TaskKind]ModelTier{
 	dag.TaskKindInfraCI:         TierFast,
 	dag.TaskKindCrossCutTesting: TierMedium,
 	dag.TaskKindCrossCutDocs:    TierFast,
+
+	// Integration repair runs at TierSlow: it must reason across multiple files
+	// to identify the root cause of cross-task compilation failures.
+	dag.TaskKindIntegrationRepair: TierSlow,
 }
 
 // tierForKind returns the default ModelTier for a task kind.

@@ -185,6 +185,42 @@ func (b *Builder) addBackendTasks(m *manifest.Manifest, d *DAG) {
 		}
 	}
 
+	// Reconciliation task: runs after ALL service chains complete.
+	// Performs a project-wide go build ./... and patches only the files that fail
+	// to compile, fixing cross-task type mismatches and import-path drift that
+	// per-task verification cannot catch because each task is verified in isolation.
+	// Only emitted when there are service tasks to reconcile.
+	svcBootstrapIDs := serviceIDs(m)
+	if len(svcBootstrapIDs) > 0 {
+		reconcileDeps := make([]string, len(svcBootstrapIDs))
+		copy(reconcileDeps, svcBootstrapIDs)
+		if _, hasAuth := d.Tasks["backend.auth"]; hasAuth {
+			reconcileDeps = append(reconcileDeps, "backend.auth")
+		}
+		// ModulePath is "monolith" for monolith/modular-monolith arches; the runner
+		// uses it to build the correct module-relative import paths in error messages.
+		// For microservices each service has its own module — leave ModulePath empty
+		// so the reconciliation runner scans per-service module directories.
+		modulePath := ""
+		switch m.Backend.ArchPattern {
+		case manifest.ArchMonolith, manifest.ArchModularMonolith:
+			modulePath = "monolith"
+		}
+		add(d, &Task{
+			ID:           "backend.reconcile",
+			Kind:         TaskKindReconciliation,
+			Label:        "Reconcile cross-service types and imports",
+			Dependencies: reconcileDeps,
+			Payload: TaskPayload{
+				ModulePath:  modulePath,
+				ArchPattern: m.Backend.ArchPattern,
+				AllServices: m.Backend.Services,
+				ServiceDirs: svcDirs,
+				OutputDir:   backendBaseDir(svcDirs),
+			},
+		})
+	}
+
 	// Messaging broker + event stubs (config-level, stays at root)
 	if m.Backend.Messaging != nil {
 		add(d, &Task{
@@ -617,6 +653,11 @@ func (b *Builder) addFrontendTask(m *manifest.Manifest, d *DAG) {
 func (b *Builder) addInfraTasks(m *manifest.Manifest, d *DAG) {
 	// Depends on all service tasks + optional frontend.
 	baseDeps := append(serviceIDs(m), "data.schemas")
+	// Reconciliation must complete before infra so Dockerfiles are built against
+	// a codebase that has already been patched for cross-task compile errors.
+	if _, ok := d.Tasks["backend.reconcile"]; ok {
+		baseDeps = append(baseDeps, "backend.reconcile")
+	}
 	if _, ok := d.Tasks["frontend"]; ok {
 		baseDeps = append(baseDeps, "frontend")
 	}

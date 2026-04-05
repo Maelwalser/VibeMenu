@@ -54,6 +54,10 @@ var defaultTierForKind = map[dag.TaskKind]ModelTier{
 	dag.TaskKindCrossCutTesting: TierMedium,
 	dag.TaskKindCrossCutDocs:    TierFast,
 
+	// Reconciliation runs at TierSlow: it must reason across ALL generated files
+	// in the backend module to identify the root cause of cross-task compile errors.
+	dag.TaskKindReconciliation: TierSlow,
+
 	// Integration repair runs at TierSlow: it must reason across multiple files
 	// to identify the root cause of cross-task compilation failures.
 	dag.TaskKindIntegrationRepair: TierSlow,

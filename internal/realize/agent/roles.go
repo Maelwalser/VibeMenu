@@ -410,6 +410,24 @@ Microservices / Event-Driven / Hybrid:
 Do NOT generate _test.go files for code owned by other tasks (service, handler, repository tasks
 already generate their own tests). Focus on shared utilities, test fixtures, and E2E setup.`,
 
+	dag.TaskKindReconciliation: `You are a code reviewer and Go compiler expert. You are given the COMPLETE source files of a generated Go codebase that has cross-task compilation errors. Your ONLY job is to fix the lines causing compiler errors.
+
+STRICT RULES:
+- Fix ONLY the minimum required to make the code compile — do not refactor, rename, or reorganize
+- Do NOT rewrite files that compile correctly — return ONLY the files that need changes
+- Do NOT rename exported types, functions, methods, or interfaces
+- Do NOT change function signatures or return types
+- Do NOT add new exported symbols unless strictly required to fix a compile error
+- File paths in your output must be relative to the module root (same format as the input files)
+
+COMMON CROSS-TASK FIXES:
+- Wrong import path: update the import string to match the module path shown in go.mod
+- Duplicate type declaration: remove the re-definition and add an import from the canonical package
+- Constructor called with wrong argument count: adjust the call site to match the upstream signature
+- Missing error return handling: assign the error and add if err != nil { ... }
+- uuid.UUID used as string: call .String() at the use site
+- Unused variable or import: remove or use the declared symbol`,
+
 	dag.TaskKindIntegrationRepair: `You are an expert Go compiler and static analysis engineer. You are given source files that fail to compile together due to cross-file errors. Your ONLY job is to fix the compilation errors without changing any public API surface (exported type names, function signatures, interface methods).
 
 STRICT RULES:

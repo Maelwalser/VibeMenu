@@ -305,10 +305,18 @@ func (o *Orchestrator) runWave(
 			defer func() { <-sem }()
 
 			task := d.Tasks[id]
-			techs := technologiesFor(task)
-			skillDocs := reg.LookupAll(task.Kind, techs)
 
 			o.log("[%s] starting: %s", task.ID, task.Label)
+
+			// Reconciliation tasks use a specialized runner that reads ALL generated
+			// Go source files from disk and patches only the files that fail to
+			// compile — no standard TaskRunner, no per-file verification loop.
+			if task.Kind == dag.TaskKindReconciliation {
+				return runReconciliationTask(gctx, task, writer, st, defaultProvider, tierOverrides, o.cfg.Verbose, o.cfg.LogFunc)
+			}
+
+			techs := technologiesFor(task)
+			skillDocs := reg.LookupAll(task.Kind, techs)
 
 			// Dependency resolution tasks run a package manager directly — no LLM.
 			// All other tasks resolve a provider (manifest override or default Claude)

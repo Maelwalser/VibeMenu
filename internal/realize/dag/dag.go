@@ -31,6 +31,13 @@ const (
 	TaskKindCrossCutTesting TaskKind = "crosscut.testing"
 	TaskKindCrossCutDocs    TaskKind = "crosscut.docs"
 
+	// TaskKindReconciliation runs after all backend service chains complete but
+	// before infrastructure generation. It performs a project-wide go build ./...
+	// across all generated Go modules and patches only the files that fail to
+	// compile, fixing cross-task type mismatches, wrong import paths, and
+	// constructor-signature drift that per-task verification cannot catch.
+	TaskKindReconciliation TaskKind = "backend.reconciliation"
+
 	// TaskKindIntegrationRepair is a synthetic kind used exclusively by the
 	// post-pipeline integration repair phase. It never appears in the DAG; it
 	// provides a role-description hook and tier assignment for the LLM repair agent.

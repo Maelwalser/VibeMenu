@@ -1,10 +1,4 @@
-  _     _   __     _____     _____  __    __    _____  __   __   __    __   
- /_/\ /\_\ /\_\  /\  __/\  /\_____\/_/\  /\_\ /\_____\/_/\ /\_\ /\_\  /_/\  
- ) ) ) ( ( \/_/  ) )(_ ) )( (_____/) ) \/ ( (( (_____/) ) \ ( (( ( (  ) ) ) 
-/_/ / \ \_\ /\_\/ / __/ /  \ \__\ /_/ \  / \_\\ \__\ /_/   \ \_\\ \ \/ / /  
-\ \ \_/ / // / /\ \  _\ \  / /__/_\ \ \\// / // /__/_\ \ \   / / \ \  / /   
- \ \   / /( (_(  ) )(__) )( (_____\)_) )( (_(( (_____\)_) \ (_(  ( (__) )   
-  \_\_/_/  \/_/  \/____\/  \/_____/\_\/  \/_/ \/_____/\_\/ \/_/   \/__\/    
+# VibeMenu
                                                                             
 What vibe is on the menu today?
 
@@ -32,9 +26,60 @@ A TUI for declaratively specifying a complete software system architecture. Defi
 
 ## Installation
 
+### macOS / Linux — install script
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vibe-menu/vibemenu/main/install.sh | bash
 ```
 
----
+Installs `vibemenu` and `realize` to `/usr/local/bin` (override with `INSTALL_DIR`).
+
+### Specific version
+
+```bash
+VIBEMENU_VERSION=v1.0.0 bash install.sh
+```
+
+### Manual download
+
+Pre-built binaries for every platform are attached to each [GitHub Release](https://github.com/vibe-menu/vibemenu/releases):
+
+| Platform | Archive |
+|----------|---------|
+| Linux x86-64 | `vibemenu-<version>-linux-amd64.tar.gz` |
+| Linux ARM64 | `vibemenu-<version>-linux-arm64.tar.gz` |
+| macOS x86-64 | `vibemenu-<version>-darwin-amd64.tar.gz` |
+| macOS Apple Silicon | `vibemenu-<version>-darwin-arm64.tar.gz` |
+| Windows x86-64 | `vibemenu-<version>-windows-amd64.zip` |
+
+Each archive contains two binaries: `vibemenu` (TUI editor) and `realize` (code generation).
+
+### Build from source
+
+```bash
+git clone https://github.com/vibe-menu/vibemenu
+cd vibemenu
+go build -o vibemenu ./cmd/agent
+go build -o realize  ./cmd/realize
+```
+
+Requires Go 1.26+.
+
+### Skills (bundled — no extra setup needed)
+
+Skill files are **embedded in the `realize` binary**. On first run, they are
+automatically extracted to `.vibemenu/skills/` in the current directory:
+
+```
+realize --manifest manifest.json
+# realize: extracting bundled skills to .vibemenu/skills
+```
+
+Existing files are never overwritten, so you can safely customise the skills
+directory. Point `realize` at a different location with `--skills`:
+
+```bash
+realize --skills /path/to/custom/skills --manifest manifest.json
 ```
 
 ---
@@ -190,32 +235,6 @@ Per-section overrides in `section_models` use the format `"Provider · Tier"` (e
 ## Code Generation (`realize`)
 
 The `realize` binary reads `manifest.json` and drives a parallel, agentic code-generation pipeline.
-
-### CLI Flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--manifest` | `manifest.json` | Path to the manifest file |
-| `--output` | `output` | Directory for generated code |
-| `--skills` | `.vibemenu/skills` | Directory for skill markdown files |
-| `--retries` | `3` | Max verification retry attempts per task |
-| `--parallel` | `1` | Max concurrent tasks |
-| `--dry-run` | `false` | Print task plan without running agents |
-| `--verbose` | `false` | Print token usage and thinking logs |
-| `--provider` | — | Default LLM provider (overrides manifest) |
-| `--api-key` | — | API key for the default provider (overrides env var) |
-
-**Example:**
-
-```bash
-./realize \
-  --manifest manifest.json \
-  --output ./my-project \
-  --parallel 4 \
-  --provider Claude \
-  --retries 5 \
-  --verbose
-```
 
 ### Model Tiering
 

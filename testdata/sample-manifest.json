@@ -1,34 +1,12 @@
 {
-  "created_at": "2026-04-05T18:47:56.981224065+02:00",
+  "created_at": "2026-04-05T18:53:27.792084789+02:00",
   "description": "A minimal auth service with register and login flows. Users sign up with email and password, receive a JWT access token on success, and can access protected resources. The frontend is a Next.js app with React Hook Form + Zod validation calling the Go/Fiber backend over REST.",
   "data": {
     "databases": [
       {
         "alias": "primary",
         "type": "PostgreSQL",
-        "is_cache": false,
-        "ssl_mode": "require",
-        "consistency": "strong",
-        "replication": "single-node",
-        "environment": "environment"
-      },
-      {
-        "alias": "database",
-        "type": "MySQL",
-        "is_cache": false,
-        "ssl_mode": "require",
-        "consistency": "strong",
-        "replication": "single-node",
-        "environment": "environment1"
-      },
-      {
-        "alias": "database1",
-        "type": "Redis",
-        "is_cache": false,
-        "ssl_mode": "require",
-        "consistency": "strong",
-        "replication": "single-node",
-        "environment": "environment"
+        "is_cache": false
       }
     ],
     "domains": [
@@ -39,161 +17,78 @@
         "attributes": [
           {
             "name": "id",
-            "type": "varchar",
+            "type": "UUID",
+            "constraints": "Primary Key, Auto-generated",
             "sensitive": false
           },
           {
             "name": "email",
-            "type": "varchar",
-            "sensitive": false
+            "type": "String",
+            "constraints": "Required, Unique",
+            "sensitive": false,
+            "validation": "valid email format"
           },
           {
             "name": "password_hash",
-            "type": "varchar",
+            "type": "String",
+            "constraints": "Required",
             "sensitive": false
           },
           {
             "name": "is_active",
-            "type": "varchar",
+            "type": "Boolean",
+            "constraints": "Required",
             "default": "true",
             "sensitive": false
           },
           {
             "name": "refresh_token",
-            "type": "varchar",
+            "type": "String",
+            "constraints": "Nullable",
             "sensitive": false
           },
           {
             "name": "refresh_token_expires_at",
-            "type": "varchar",
+            "type": "DateTime",
+            "constraints": "Nullable",
             "sensitive": false
           },
           {
             "name": "created_at",
-            "type": "varchar",
+            "type": "DateTime",
+            "constraints": "Required, Auto-generated",
             "sensitive": false
           },
           {
             "name": "updated_at",
-            "type": "varchar",
+            "type": "DateTime",
+            "constraints": "Required, Auto-updated",
             "sensitive": false
           }
         ]
       }
-    ],
-    "file_storages": [
-      {
-        "technology": "S3",
-        "purpose": "storage",
-        "used_by_service": "service",
-        "environment": "environment",
-        "access": "Private (signed URLs)",
-        "max_size": "10 MB",
-        "ttl_minutes": "1440"
-      }
     ]
   },
   "backend": {
-    "arch_pattern": "hybrid",
-    "stack_configs": [
-      {
-        "name": "stack",
-        "language": "Go",
-        "language_version": "1.24",
-        "framework": "Fiber",
-        "framework_version": "v3.0"
-      },
-      {
-        "name": "stack1",
-        "language": "Go",
-        "language_version": "1.24",
-        "framework": "Fiber",
-        "framework_version": "v3.0"
-      },
-      {
-        "name": "stack2",
-        "language": "Go",
-        "language_version": "1.24",
-        "framework": "Fiber",
-        "framework_version": "v3.0"
-      }
-    ],
+    "arch_pattern": "monolith",
     "services": [
       {
         "name": "auth-api",
         "responsibility": "Handles user registration, login, token refresh, and logout",
-        "pattern_tag": "Monolith part",
-        "technologies": [
-          "REST"
-        ],
-        "error_format": "Platform default",
-        "service_discovery": "None"
-      },
-      {
-        "name": "service",
-        "responsibility": "",
-        "pattern_tag": "Monolith part",
-        "error_format": "Platform default",
-        "service_discovery": "None"
-      },
-      {
-        "name": "service1",
-        "responsibility": "",
-        "pattern_tag": "Monolith part",
-        "error_format": "Platform default",
-        "service_discovery": "None"
-      },
-      {
-        "name": "service2",
-        "responsibility": "",
-        "pattern_tag": "Monolith part",
-        "error_format": "Platform default",
-        "service_discovery": "DNS-based",
-        "environment": "environment"
+        "interfaces": [
+          {
+            "name": "REST API",
+            "type": "REST",
+            "description": "Auth endpoints consumed by the Next.js frontend"
+          }
+        ]
       }
     ],
-    "comm_links": [
-      {
-        "from": "auth-api",
-        "to": "service",
-        "direction": "Unidirectional (→)",
-        "protocol": "REST (HTTP)",
-        "sync_async": "Synchronous"
-      },
-      {
-        "from": "service1",
-        "to": "service2",
-        "direction": "Unidirectional (→)",
-        "protocol": "REST (HTTP)",
-        "sync_async": "Synchronous"
-      }
-    ],
-    "messaging": {
-      "broker_tech": "Kafka",
-      "deployment": "AWS MSK (managed)",
-      "serialization": "JSON",
-      "delivery": "At-most-once",
-      "environment": "(none)"
-    },
-    "events": [
-      {
-        "name": "event",
-        "publisher_service": "service",
-        "consumer_service": "service2",
-        "dto": "(none)"
-      }
-    ],
-    "api_gateway": {
-      "technology": "Kong",
-      "routing": "Path-based",
-      "environment": "(none)"
-    },
     "auth": {
-      "strategy": "JWT (stateless)",
       "provider": "self-managed",
       "service_unit": "auth-api",
       "authz_model": "RBAC",
-      "token_storage": "Authorization header (Bearer)",
+      "token_storage": "HttpOnly cookie",
       "permissions": [
         {
           "name": "profile:read",
@@ -215,17 +110,10 @@
         }
       ]
     },
-    "job_queues": [
-      {
-        "name": "queue",
-        "technology": "Asynq",
-        "concurrency": "10",
-        "max_retries": "3",
-        "retry_policy": "Exponential backoff",
-        "dlq": "false",
-        "worker_service": "auth-api"
-      }
-    ]
+    "language": "Go",
+    "language_version": "1.24",
+    "framework": "Fiber",
+    "framework_version": "v3.0"
   },
   "contracts": {
     "dtos": [
@@ -442,22 +330,8 @@
         "REST": "URL path (/v1/)"
       },
       "current_version": "v1",
-      "deprecation_policy": "None"
-    },
-    "external_apis": [
-      {
-        "provider": "api",
-        "called_by_service": "auth-api",
-        "protocol": "REST",
-        "auth_mechanism": "API Key",
-        "failure_strategy": "Circuit Breaker",
-        "tls_mode": "TLS",
-        "message_format": "JSON",
-        "hmac_header": "X-Hub-Signature-256",
-        "retry_policy": "Retry 3x",
-        "soap_version": "1.1"
-      }
-    ]
+      "deprecation_policy": "6-month notice with Sunset header"
+    }
   },
   "frontend": {
     "tech": {
@@ -589,33 +463,11 @@
     "framework": "React",
     "styling": "Tailwind CSS"
   },
-  "infrastructure": {
-    "environments": [
-      {
-        "name": "environment",
-        "compute_env": "Containers (Docker)",
-        "cloud_provider": "AWS",
-        "orchestrator": "Docker Compose"
-      },
-      {
-        "name": "environment1",
-        "compute_env": "Containers (Docker)",
-        "cloud_provider": "AWS",
-        "orchestrator": "Docker Compose"
-      },
-      {
-        "name": "environment2",
-        "compute_env": "Containers (Docker)",
-        "cloud_provider": "AWS",
-        "orchestrator": "Docker Compose"
-      }
-    ]
-  },
   "realize": {
-    "app_name": "test",
+    "app_name": "app",
     "output_dir": "generated-code",
-    "concurrency": 1,
-    "verify": true,
+    "concurrency": 4,
+    "verify": false,
     "dry_run": false,
     "provider": "Claude",
     "tier_fast": "claude-haiku-4-5-20251001",
@@ -626,29 +478,7 @@
     {
       "alias": "primary",
       "type": "PostgreSQL",
-      "is_cache": false,
-      "ssl_mode": "require",
-      "consistency": "strong",
-      "replication": "single-node",
-      "environment": "environment"
-    },
-    {
-      "alias": "database",
-      "type": "MySQL",
-      "is_cache": false,
-      "ssl_mode": "require",
-      "consistency": "strong",
-      "replication": "single-node",
-      "environment": "environment1"
-    },
-    {
-      "alias": "database1",
-      "type": "Redis",
-      "is_cache": false,
-      "ssl_mode": "require",
-      "consistency": "strong",
-      "replication": "single-node",
-      "environment": "environment"
+      "is_cache": false
     }
   ]
 }

@@ -271,7 +271,9 @@ func (s *Screen) trackProgress(text string) {
 }
 
 // renderProgressBar renders a filled/empty block progress bar with a task counter.
-func renderProgressBar(done, total, w int) string {
+// When not complete, a sine-wave animation is shown at the leading edge of the
+// filled portion, giving the impression that progress is flowing into the bar.
+func renderProgressBar(done, total, w, frame int) string {
 	label := fmt.Sprintf(" %d / %d tasks", done, total)
 	barW := w - len([]rune(label)) - 6 // 2 padding + "[" + "]" + 1 space
 	if barW < 4 {
@@ -286,13 +288,28 @@ func renderProgressBar(done, total, w int) string {
 		filled = barW
 	}
 
+	complete := done >= total
 	fillStyle := styleProgressFill
-	if done >= total {
+	if complete {
 		fillStyle = styleProgressDone
 	}
 
-	bar := fillStyle.Render(strings.Repeat("█", filled)) +
-		styleProgressEmpty.Render(strings.Repeat("░", barW-filled))
+	var bar string
+	if complete {
+		bar = fillStyle.Render(strings.Repeat("█", barW))
+	} else {
+		wave := core.SineWaveFrames[frame%16]
+		waveW := len([]rune(wave)) // 8 chars
+		// Ensure the wave fits within the empty region.
+		emptyW := barW - filled
+		if waveW > emptyW {
+			waveW = emptyW
+			wave = string([]rune(wave)[:waveW])
+		}
+		bar = fillStyle.Render(strings.Repeat("█", filled)) +
+			styleProgressFill.Render(wave) +
+			styleProgressEmpty.Render(strings.Repeat("░", emptyW-waveW))
+	}
 
 	return "  " +
 		styleProgressEmpty.Render("[") +
@@ -397,17 +414,15 @@ func (s Screen) View(w, h int) string {
 		}
 	} else {
 		spin := styleRealizeSpinner.Render(spinnerFrames[s.frame%len(spinnerFrames)])
-		wave := styleRealizeStatus.Render(core.SineWaveFrames[s.frame%16])
 		statusLine = "  " + spin + "  " +
 			styleRealizeAppName.Render(s.appName) + "  " +
-			styleRealizeStatus.Render("realizing…  ") +
-			wave + timer
+			styleRealizeStatus.Render("realizing…") + timer
 	}
 	lines = append(lines, statusLine)
 
 	// Progress bar — shown once the orchestrator reports total task count.
 	if s.totalTasks > 0 {
-		lines = append(lines, renderProgressBar(s.doneTasks, s.totalTasks, w))
+		lines = append(lines, renderProgressBar(s.doneTasks, s.totalTasks, w, s.frame))
 	}
 
 	lines = append(lines, "")

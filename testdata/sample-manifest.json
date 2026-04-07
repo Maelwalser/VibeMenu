@@ -68,10 +68,6 @@
       {
         "name": "auth-api",
         "responsibility": "Handles user registration, login, token refresh, and logout",
-        "language": "Go",
-        "language_version": "1.24",
-        "framework": "Fiber",
-        "framework_version": "v3.0",
         "technologies": [
           "REST"
         ],
@@ -87,13 +83,17 @@
               {
                 "name": "FindByEmail",
                 "op_type": "query",
-                "filter_by": ["email"],
+                "filter_by": [
+                  "email"
+                ],
                 "result_shape": "Single item"
               },
               {
                 "name": "FindByID",
                 "op_type": "query",
-                "filter_by": ["id"],
+                "filter_by": [
+                  "id"
+                ],
                 "result_shape": "Single item"
               },
               {
@@ -104,13 +104,17 @@
               {
                 "name": "UpdateRefreshToken",
                 "op_type": "update",
-                "filter_by": ["id"],
+                "filter_by": [
+                  "id"
+                ],
                 "description": "Update refresh_token and refresh_token_expires_at for a user"
               },
               {
                 "name": "ClearRefreshToken",
                 "op_type": "update",
-                "filter_by": ["id"],
+                "filter_by": [
+                  "id"
+                ],
                 "description": "Nullify refresh_token and refresh_token_expires_at on logout"
               }
             ]
@@ -119,7 +123,6 @@
       }
     ],
     "auth": {
-      "strategy": "JWT",
       "provider": "self-managed",
       "service_unit": "auth-api",
       "authz_model": "RBAC",
@@ -143,7 +146,12 @@
           ]
         }
       ]
-    }
+    },
+    "monolith_environment": "dev",
+    "language": "Go",
+    "language_version": "1.24",
+    "framework": "Fiber",
+    "framework_version": "v3.0"
   },
   "contracts": {
     "dtos": [
@@ -363,6 +371,7 @@
       "form_handling": "React Hook Form",
       "validation": "Zod",
       "image_optimization": "Next/Image (built-in)",
+      "auth_flow_type": "None (no auth configured)",
       "error_boundary": "React Error Boundary",
       "bundle_optimization": "Code splitting (route-based)"
     },
@@ -469,39 +478,10 @@
     "navigation": {
       "nav_type": "Top bar",
       "auth_aware": true
-    }
-  },
-  "infrastructure": {
-    "environments": [
-      {
-        "name": "dev",
-        "compute_env": "containerized",
-        "orchestrator": "Docker Compose"
-      }
-    ],
-    "cicd": {
-      "platform": "GitHub Actions",
-      "container_runtime": "Docker",
-      "deploy_strategy": "Rolling update"
     },
-    "observability": {
-      "logging": "Structured JSON (stdlib slog)",
-      "health_checks": true
-    }
-  },
-  "cross_cutting": {
-    "testing": {
-      "unit": "Go testing + testify",
-      "integration": "testcontainers-go (PostgreSQL)",
-      "e2e": "Playwright",
-      "frontend_testing": "Vitest + React Testing Library"
-    },
-    "docs": {
-      "per_protocol_formats": {
-        "REST": "OpenAPI/Swagger"
-      },
-      "auto_generate": true
-    }
+    "rendering": "SSR",
+    "framework": "React",
+    "styling": "Tailwind CSS"
   },
   "infrastructure": {
     "cicd": {

@@ -349,7 +349,8 @@ The Claims struct MUST have: UserID string, Email string, Role Role, Permissions
 TokenManager constructors return (*TokenManager, error) — always two return values.
 GenerateRefreshToken is a METHOD on *TokenManager, not a standalone function.
 
-Use the exact library APIs from the "Dependency & API Reference" section for JWT operations.`,
+Use the exact library APIs from the "Dependency & API Reference" section for JWT operations.` +
+		crossTaskConsistencyRules,
 	dag.TaskKindMessaging: "You are an expert distributed systems engineer. Generate message broker configuration, event producer/consumer boilerplate, and event schema definitions.",
 	dag.TaskKindGateway:   "You are an expert platform engineer. Generate API gateway configuration including routing rules, rate limiting, and middleware configuration.",
 

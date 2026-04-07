@@ -26,7 +26,8 @@ var MaxTotalCharsByKind = map[string]int{
 	"backend.service.bootstrap":  30000, // sees repo + service + handler simultaneously
 	"backend.service.handler":    20000, // sees repo + service + auth
 	"backend.service.logic":      15000, // sees repo + data schemas
-	"backend.service.repository": 10000, // sees data schemas only
+	"backend.service.repository": 15000, // sees data schemas + plan interfaces
+	"backend.service.plan":       20000, // sees data schemas — must receive full domain structs + input types
 	"backend.auth":               20000, // needs all service interfaces
 	"backend.gateway":            20000, // needs full service surface
 	"contracts":                  20000, // aggregates all service + data output

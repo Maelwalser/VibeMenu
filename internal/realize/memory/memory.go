@@ -288,16 +288,18 @@ func depPriority(kind dag.TaskKind) float64 {
 	switch kind {
 	case dag.TaskKindAuth:
 		return 0.9 // TokenManager signatures critical for handlers
+	case dag.TaskKindDataSchemas:
+		return 0.85 // domain structs + input types are foundational for ALL downstream tasks
 	case dag.TaskKindServiceLogic:
 		return 0.8 // method signatures needed by handler
 	case dag.TaskKindServiceHandler:
 		return 0.7 // route contracts needed by bootstrap
+	case dag.TaskKindServicePlan:
+		return 0.6 // interfaces are the binding contract for all layers
 	case dag.TaskKindServiceRepository:
 		return 0.5 // interfaces are compact after extraction
-	case dag.TaskKindServicePlan:
-		return 0.4 // interfaces already seen via repo
-	case dag.TaskKindDataSchemas, dag.TaskKindDataMigrations:
-		return 0.3 // domain structs, already compact from sig extraction
+	case dag.TaskKindDataMigrations:
+		return 0.15 // SQL files — useful for reference but not needed by Go compilation
 	case dag.TaskKindDependencyResolution:
 		return 0.1 // go.mod only, very small
 	default:

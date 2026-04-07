@@ -639,7 +639,7 @@ func (b *Builder) addCrossCutTasks(m *manifest.Manifest, d *DAG) {
 		})
 	}
 
-	if m.CrossCut.Docs != nil && m.CrossCut.Docs.APIDocs != "" {
+	if m.CrossCut.Docs != nil && (m.CrossCut.Docs.APIDocs != "" || len(m.CrossCut.Docs.PerProtocolFormats) > 0) {
 		add(d, &Task{
 			ID:           "crosscut.docs",
 			Kind:         TaskKindCrossCutDocs,

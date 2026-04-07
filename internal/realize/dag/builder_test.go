@@ -220,6 +220,15 @@ func TestBuild_CrossCutDocs_WhenAPIDocsSet(t *testing.T) {
 	assertTaskPresent(t, d, "crosscut.docs")
 }
 
+func TestBuild_CrossCutDocs_WhenPerProtocolFormats(t *testing.T) {
+	m := minimalMonolith()
+	m.CrossCut.Docs = &manifest.DocsConfig{
+		PerProtocolFormats: map[string]string{"REST": "OpenAPI 3.1"},
+	}
+	d := buildDAG(t, m)
+	assertTaskPresent(t, d, "crosscut.docs")
+}
+
 func TestBuild_ValidDAG_NoErrors(t *testing.T) {
 	// Full-featured manifest should produce a valid DAG with no build errors
 	m := &manifest.Manifest{

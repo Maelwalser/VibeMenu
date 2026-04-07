@@ -38,9 +38,9 @@ func (be BackendEditor) HintLine() string {
 		}
 		ed := be.serviceEditor
 		if ed.itemView == beListViewList {
-			return hintBar("j/k", "nav", "a", "add", "d", "del", "Enter", "edit", "R", "data access", "h/l", "tabs")
+			return hintBar("j/k", "nav", "a", "add", "d", "del", "Enter", "edit", "h/l", "tabs")
 		}
-		return hintBar("j/k", "navigate", "R", "data access", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
+		return hintBar("j/k", "navigate", "i/Enter", "edit", "Space", "cycle", "b/Esc", "back")
 	case beTabComm:
 		ed := be.commEditor
 		if ed.itemView == beListViewList {
@@ -570,8 +570,22 @@ func (be BackendEditor) viewServiceEditor(w int) []string {
 		filteredActiveIdx = 0
 	}
 
+	// Count repos for this service.
+	repoCountHint := ""
+	if ed.itemIdx < len(be.Services) {
+		nRepos := len(be.Services[ed.itemIdx].Repositories)
+		if nRepos == 0 {
+			repoCountHint = "  no repos — press R to add"
+		} else if nRepos == 1 {
+			repoCountHint = "  1 repo — press R to manage"
+		} else {
+			repoCountHint = fmt.Sprintf("  %d repos — press R to manage", nRepos)
+		}
+	}
+
 	var lines []string
 	lines = append(lines, StyleSectionDesc.Render("  ← ")+StyleFieldKey.Render(name), "")
+	lines = append(lines, StyleSectionDesc.Render("  (R: data access"+repoCountHint+")"), "")
 	// For monolith: show which global stack config is in use.
 	if be.currentArch() == "monolith" {
 		if be.envEnabled {

@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-04-07T21:58:45.990463459+02:00",
+  "created_at": "2026-04-07T23:21:40.006778963+02:00",
   "description": "A minimal auth service with register and login flows. Users sign up with email and password, receive a JWT access token on success, and can access protected resources. The frontend is a Next.js app with React Hook Form + Zod validation calling the Go/Fiber backend over REST.",
   "data": {
     "databases": [
@@ -123,7 +123,6 @@
       "provider": "self-managed",
       "service_unit": "auth-api",
       "authz_model": "RBAC",
-      "token_storage": "HttpOnly cookie",
       "permissions": [
         {
           "name": "profile:read",
@@ -504,10 +503,52 @@
       "auto_generate": true
     }
   },
+  "infrastructure": {
+    "cicd": {
+      "platform": "GitHub Actions",
+      "container_registry": "GHCR",
+      "deploy_strategy": "Rolling",
+      "iac_tool": "Terraform",
+      "secrets_mgmt": "GitHub Secrets",
+      "container_runtime": "scratch"
+    },
+    "observability": {
+      "logging": "Loki + Grafana",
+      "metrics": "Prometheus + Grafana",
+      "tracing": "OpenTelemetry + Jaeger",
+      "error_tracking": "Sentry",
+      "health_checks": true,
+      "alerting": "Grafana Alerting",
+      "log_retention": "30 days"
+    },
+    "environments": [
+      {
+        "name": "dev",
+        "compute_env": "containerized",
+        "orchestrator": "Docker Compose"
+      }
+    ]
+  },
+  "cross_cutting": {
+    "testing": {
+      "unit": "Go testing",
+      "integration": "In-memory fakes",
+      "e2e": "Playwright",
+      "api": "Bruno",
+      "load": "k6",
+      "frontend_testing": "Vitest"
+    },
+    "docs": {
+      "per_protocol_formats": {
+        "REST": "OpenAPI/Swagger"
+      },
+      "auto_generate": true
+    }
+  },
   "realize": {
     "app_name": "auth-app",
     "output_dir": "generated-code",
-    "concurrency": 4,
+    "concurrency": 1,
     "verify": true,
     "provider": "Claude",
     "tier_fast": "claude-haiku-4-5-20251001",

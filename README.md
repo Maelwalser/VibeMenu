@@ -161,7 +161,7 @@ The Backend section starts with an **architecture pattern** selector that contro
 
 ### Section 2 — Data
 
-Sub-tabs: **Databases** · **Domains** · **Caching** · **File Storage**
+Sub-tabs: **Databases** · **Domains** · **Caching** · **File Storage** · **Governance**
 
 **Databases** — Define database sources with alias, type (PostgreSQL, MySQL, SQLite, MongoDB, DynamoDB, Cassandra, Redis, Memcached, ClickHouse, Elasticsearch), version, namespace, and cache flag. Type-conditional fields appear based on your selection: SSL mode (PostgreSQL/MySQL), consistency level (Cassandra/MongoDB/DynamoDB), replication strategy, and connection pool sizing.
 
@@ -201,9 +201,9 @@ Sub-tabs: **Tech** · **Theme** · **Pages** · **Navigation** · **i18n** · **
 
 **Navigation** — Nav type (top bar, sidebar, bottom tabs, hamburger menu, combined), breadcrumbs toggle, and auth-aware navigation (show/hide items based on auth state).
 
-**i18n** — Internationalization settings. Enable/disable, default locale (40+ locale options), supported locales, i18n library (i18next, next-intl, react-i18next, LinguiJS, vue-i18n), and timezone handling (UTC always, user preference, auto-detect, manual).
+**i18n** — Internationalization settings. Enable/disable, default locale (40+ locale options), supported locales, i18n library (filtered by framework — react-i18next/next-intl/LinguiJS for React; vue-i18n for Vue; svelte-i18n for Svelte; @angular/localize/ngx-translate for Angular; i18next as universal fallback), and timezone handling (UTC always, user preference, auto-detect, manual).
 
-**A11y/SEO** — Accessibility: WCAG level (A, AA, AAA). SEO: rendering strategy (SSR, SSG, ISR, Prerender), sitemap generation, meta tag management (manual, react-helmet, framework-native), analytics (PostHog, Google Analytics 4, Plausible, Mixpanel, Segment), and frontend RUM (Sentry, Datadog RUM, LogRocket, New Relic Browser).
+**A11y/SEO** — Accessibility: WCAG level (A, AA, AAA). SEO: rendering strategy (SSR, SSG, ISR, Prerender), sitemap generation, meta tag management (manual, framework-native), analytics (PostHog, Google Analytics 4, Plausible, Mixpanel, Segment), and frontend RUM (Sentry, Datadog RUM, LogRocket, New Relic Browser).
 
 **Assets** — Attach design assets, mockups, or inspiration references. Each asset has a name, path/URL, type (image, icon, font, video, mockup, moodboard), format (png, jpg, svg, gif, mp4, pdf, figma, sketch), usage classification (project or inspiration), and description.
 
@@ -234,30 +234,41 @@ Sub-tabs: **Testing** · **Docs** · **Standards**
 | Unit | By backend language (Go testing/Testify for Go, Jest/Vitest for TypeScript, pytest for Python, JUnit for Java, etc.) |
 | Integration | By architecture pattern (Testcontainers/Docker Compose for microservices; in-memory fakes for monoliths) |
 | E2E | By frontend platform (Playwright/Cypress/Selenium for web; Flutter Driver for Dart; Espresso for Android; XCUITest for iOS) |
+| FE Testing | By frontend language (Vitest/Jest/Testing Library/Storybook for TypeScript/JavaScript; None for others) |
 | API | By communication protocols (Bruno/Hurl for REST; GraphQL Playground for GraphQL; grpcurl/BloomRPC for gRPC) |
 | Load | k6, Artillery, JMeter (plus Locust when Python is a backend language) |
 | Contract | By architecture pattern (Pact/Schemathesis for microservices; AsyncAPI validator for event-driven) |
 
 **Docs** — Per-protocol documentation format. REST gets OpenAPI/Swagger, GraphQL gets GraphQL Playground/SDL, gRPC gets reflection/buf.build, WebSocket and Events get AsyncAPI/CloudEvents spec. Also configures auto-generation from code annotations and changelog strategy (Conventional Commits, Manual).
 
-**Standards** — Dependency update strategy (Dependabot, Renovate), feature flags (LaunchDarkly, Unleash, Flagsmith), backend linter (filtered by language), and frontend linter (ESLint+Prettier, Biome, oxlint).
+**Standards** — Dependency update strategy (Dependabot, Renovate), feature flags (LaunchDarkly, Unleash, Flagsmith), backend linter (filtered by language — golangci-lint for Go, ESLint/Biome for TypeScript, Ruff for Python, Clippy for Rust, etc.), and frontend linter (filtered by frontend language — ESLint+Prettier/Biome/oxlint/Stylelint for TypeScript/JavaScript; Custom/None for others).
 
 ---
 
 ### Section 7 — Realize
 
-Code generation configuration for the `realize` engine:
+Code generation configuration for the `realize` engine. The form is split into two groups:
+
+**App Settings:**
 
 | Field | Description |
 |-------|-------------|
-| App Name | Application name used in generated code |
-| Output Dir | Destination directory for generated files |
-| Model | Global LLM model for code generation |
-| Concurrency | Max parallel tasks (1, 2, 4, 8) |
-| Verify | Run language verifiers after generation |
-| Dry Run | Print task plan without calling agents |
+| App Name | Application name used in generated code (default: `my-app`) |
+| Output Dir | Destination directory for generated files (default: `.`) |
+| Concurrency | Max parallel tasks: 1, 2, 4, 8 (default: `4`) |
+| Verify | Run language verifiers after generation (default: `true`) |
+| Dry Run | Print task plan without calling agents (default: `false`) |
 
-**Per-section model overrides** let you assign different LLM providers and tiers to each pillar (backend, data, contracts, frontend, infra, crosscut) using the format `"Provider · Tier"` (e.g., `"Claude · Sonnet"`, `"Gemini · Flash"`). Sections without an override inherit the global model.
+**Provider & Tier Assignment:**
+
+| Field | Description |
+|-------|-------------|
+| Provider | Select from configured providers (populated from Provider Menu) |
+| Tier Fast | Model for low-complexity tasks (contracts, docs, Docker, CI) |
+| Tier Medium | Model for medium-complexity tasks (services, auth, data, frontend) |
+| Tier Slow | Model for high-complexity / escalation tasks |
+
+Tier model options update dynamically when the provider changes. When no provider is selected, the orchestrator falls back to Claude via the `ANTHROPIC_API_KEY` environment variable. Press `R` to save the manifest and launch realization.
 
 ---
 
@@ -279,20 +290,24 @@ Saved on `:w` or `Ctrl+S`. Unconfigured pillars are omitted automatically.
   "description": "Free-text project description",
 
   "backend": {
-    "arch_pattern": "Microservices",
+    "arch_pattern": "microservices",
     "services": [],
     "stack_configs": [],
-    "auth": { "strategy": "JWT", "roles": [] },
+    "comm_links": [],
+    "messaging": {},
+    "events": [],
+    "api_gateway": {},
+    "auth": { "strategy": "JWT", "roles": [], "permissions": [] },
     "waf": {},
-    "job_queues": [],
-    "cron_jobs": []
+    "job_queues": []
   },
 
   "data": {
     "databases": [],
     "domains": [],
     "cachings": [],
-    "file_storages": []
+    "file_storages": [],
+    "governances": []
   },
 
   "contracts": {
@@ -305,6 +320,7 @@ Saved on `:w` or `Ctrl+S`. Unconfigured pillars are omitted automatically.
   "frontend": {
     "tech": {},
     "theme": {},
+    "components": [],
     "pages": [],
     "navigation": {},
     "i18n": {},
@@ -326,22 +342,15 @@ Saved on `:w` or `Ctrl+S`. Unconfigured pillars are omitted automatically.
 
   "realize": {
     "app_name": "my-app",
-    "output_dir": "output",
-    "model": "claude-sonnet-4-6",
+    "output_dir": ".",
     "concurrency": 4,
     "verify": true,
     "dry_run": false,
-    "section_models": {
-      "backend": "Claude · Sonnet",
-      "data": "Claude · Sonnet",
-      "contracts": "Claude · Haiku",
-      "frontend": "Claude · Sonnet",
-      "infra": "Claude · Haiku",
-      "crosscut": "Claude · Haiku"
-    }
-  },
-
-  "configured_providers": {}
+    "provider": "Claude",
+    "tier_fast": "claude-haiku-4-5-20251001",
+    "tier_medium": "claude-sonnet-4-6",
+    "tier_slow": "claude-opus-4-6"
+  }
 }
 ```
 
@@ -349,23 +358,20 @@ Saved on `:w` or `Ctrl+S`. Unconfigured pillars are omitted automatically.
 
 ## Provider Configuration
 
-Open the **Provider Menu** with `Shift+M` to configure LLM providers interactively.
+Open the **Provider Menu** with `Shift+M` to configure LLM providers interactively. Each provider can be independently configured with its own auth method and credential. Configured providers become available in the Realize tab's provider selector.
 
-Supported providers and their model tiers:
+| Provider | Auth Methods | Fast Tier | Medium Tier | Slow Tier |
+|----------|-------------|-----------|-------------|-----------|
+| **Claude** | API Key | Haiku (`claude-haiku-4-5-20251001`) | Sonnet (`claude-sonnet-4-6`) | Opus (`claude-opus-4-6`) |
+| **ChatGPT** | API Key | Mini (`gpt-4o-mini`, `o3-mini`) | 4o (`gpt-4o`) | o1 |
+| **Gemini** | API Key, OAuth | Flash (`gemini-2.0-flash`) | Pro (`gemini-2.0-pro-exp`) | Ultra (`gemini-ultra`) |
+| **Mistral** | API Key | Nemo (`open-mistral-nemo`) | Small (`mistral-small-2409`) | Large (`mistral-large-2411`) |
+| **Llama** | API Key | 8B (`llama-3.2-8b-preview`) | 70B (`llama-3.3-70b-versatile`) | 405B (`llama-3.1-405b-reasoning`) |
+| **Custom** | API Key | — | — | — |
 
-| Provider | Fast | Medium | Slow |
-|----------|------|--------|------|
-| **Claude** | Haiku (`claude-haiku-4-5-20251001`) | Sonnet (`claude-sonnet-4-6`) | Opus (`claude-opus-4-6`) |
-| **ChatGPT** | o3-mini | 4o (`gpt-4o`) | o1 |
-| **Gemini** | Flash (`gemini-2.0-flash`) | Pro (`gemini-2.0-pro-exp`) | Ultra (`gemini-ultra`) |
-| **Mistral** | Nemo (`open-mistral-nemo`) | Small (`mistral-small-2409`) | Large (`mistral-large-2411`) |
-| **Llama** | 8B (`llama-3.2-8b-preview`) | 70B (`llama-3.3-70b-versatile`) | 405B (`llama-3.1-405b-reasoning`) |
+Credentials are persisted to the OS config directory (`~/.config/vibemenu/providers.json` on Linux, `~/Library/Application Support/vibemenu/providers.json` on macOS) and loaded on startup. The Gemini provider additionally supports OAuth 2.0 PKCE flow.
 
-Authentication is configured per provider via API key or OAuth 2.0 PKCE flow. Credentials are stored in `manifest.json` under `configured_providers`.
-
-Per-section overrides in `section_models` use the format `"Provider · Tier"` (e.g. `"Claude · Sonnet"`). Sections without an override inherit the global model selection.
-
-**Environment variable fallback:**
+**Environment variable fallback** (used when no provider is configured in the UI):
 
 | Provider | Environment Variable |
 |----------|---------------------|
